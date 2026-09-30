@@ -1,0 +1,346 @@
+/* Visual language carried over from gearoidocallaghan.com/shithead:
+   dark green table, gold accents, Arial, translucent black panels. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --green: #1a5c2a;
+  --gold: #FFD700;
+  --gold-hover: #FFC200;
+  --panel: rgba(0, 0, 0, 0.25);
+  --panel-strong: rgba(0, 0, 0, 0.35);
+  --hairline: rgba(255, 255, 255, 0.2);
+}
+
+body {
+  background-color: var(--green);
+  font-family: Arial, sans-serif;
+  color: #ffffff;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 72px 16px 32px;
+}
+
+#site-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 12px 20px;
+  background-color: var(--panel-strong);
+  backdrop-filter: blur(6px);
+}
+
+.site-nav-back {
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 0.85rem;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.site-nav-back:hover { opacity: 1; }
+
+.site-nav-links { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.site-nav-links a {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  transition: color 0.2s;
+}
+
+.site-nav-links a:hover { color: var(--gold); }
+
+#app {
+  width: 100%;
+  max-width: 460px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  background-color: var(--panel);
+  border-radius: 12px;
+}
+
+h1 {
+  font-size: 1.6rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+h2 {
+  font-size: 1rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+h3 {
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.tag {
+  display: inline-block;
+  background-color: var(--gold);
+  color: #111;
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  vertical-align: middle;
+}
+
+.blurb {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.footnote {
+  border-top: 1px solid var(--hairline);
+  padding-top: 16px;
+  font-size: 0.8rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > span {
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.field-inline { flex: 1; }
+
+input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 1rem;
+  color: #ffffff;
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+#code-input {
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-weight: bold;
+}
+
+.actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.actions button { flex-shrink: 0; }
+
+button {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--gold);
+  color: #111111;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+button:hover { background-color: var(--gold-hover); }
+
+button:disabled {
+  background-color: #888888;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
+
+#create-btn { width: 100%; }
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
+}
+
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--hairline);
+}
+
+.error {
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #ffb3b3;
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.room-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.room-code {
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 0.25em;
+  color: var(--gold);
+}
+
+.status {
+  font-size: 0.85rem;
+  font-weight: bold;
+  padding: 10px 12px;
+  background-color: var(--panel-strong);
+  border-radius: 8px;
+}
+
+.status.warn { color: var(--gold); }
+.status.bad { color: #ffb3b3; }
+
+.seats-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.muted {
+  font-weight: normal;
+  opacity: 0.6;
+}
+
+.seat-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: var(--panel-strong);
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+}
+
+.seat.is-you { border-left-color: var(--gold); }
+
+.seat.is-empty {
+  background-color: transparent;
+  border: 1px dashed var(--hairline);
+  opacity: 0.5;
+}
+
+.seat-number {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.seat-name {
+  flex: 1;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat-badge {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.seat-badge.host {
+  background-color: var(--gold);
+  color: #111;
+  font-weight: bold;
+}
+
+.seat-badge.away { color: #ffb3b3; }
+
+@media (max-width: 480px) {
+  body {
+    align-items: flex-start;
+    padding: 84px 12px 24px;
+  }
+
+  .panel { padding: 18px; gap: 16px; }
+
+  h1 { font-size: 1.3rem; }
+
+  .actions { flex-wrap: wrap; }
+
+  #join-form button { width: 100%; }
+}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shithead — Multiplayer</title>
+  <meta name="description" content="Online multiplayer Shithead for 2-4 players.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="site-nav">
+    <a class="site-nav-back" href="https://gearoidocallaghan.com/">&larr; gearoidocallaghan.com</a>
+    <div class="site-nav-links">
+      <a href="https://gearoidocallaghan.com/shithead/">Single player</a>
+    </div>
+  </nav>
+
+  <main id="app">
+    <!-- Screen 1: pick a name, then create or join a room. -->
+    <section id="lobby-screen" class="panel">
+      <h1>Shithead <span class="tag">Multiplayer</span></h1>
+      <p class="blurb">2&ndash;4 players. One of you creates a room, shares the code, everyone else joins it.</p>
+
+      <label class="field">
+        <span>Your name</span>
+        <input id="name-input" type="text" maxlength="16" autocomplete="nickname" placeholder="e.g. Gaz">
+      </label>
+
+      <div class="actions">
+        <button id="create-btn" type="button">Create a room</button>
+      </div>
+
+      <div class="or"><span>or</span></div>
+
+      <form id="join-form" class="actions">
+        <label class="field field-inline">
+          <span>Room code</span>
+          <input id="code-input" type="text" maxlength="4" inputmode="text" autocapitalize="characters"
+                 autocomplete="off" spellcheck="false" placeholder="ABCD">
+        </label>
+        <button id="join-btn" type="submit">Join</button>
+      </form>
+
+      <p id="lobby-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <!-- Screen 2: the room itself. Presence only for now. -->
+    <section id="room-screen" class="panel" hidden>
+      <div class="room-header">
+        <div>
+          <h2>Room</h2>
+          <p id="room-code" class="room-code">&mdash;</p>
+        </div>
+        <div class="room-header-actions">
+          <button id="copy-btn" type="button" class="secondary">Copy invite link</button>
+          <button id="leave-btn" type="button" class="secondary">Leave</button>
+        </div>
+      </div>
+
+      <p id="room-status" class="status">Connecting&hellip;</p>
+
+      <h3 class="seats-heading">Players <span id="seat-count" class="muted">(0/4)</span></h3>
+      <ul id="seat-list" class="seat-list"></ul>
+
+      <p class="blurb footnote">Game play lands in the next milestone &mdash; for now this is presence only,
+        so you can check two tabs see each other.</p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
