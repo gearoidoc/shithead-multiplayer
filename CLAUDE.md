@@ -89,10 +89,16 @@ These are implemented today for exactly 2 players (`gameState.player` vs
     their face-down cards (revealed only on play; if illegal, they pick up
     the whole pile plus the revealed card).
 - **Win condition today**: first player to empty hand + up-cards + down-cards
-  (with the draw pile also empty) wins, game ends immediately. For 3-4
-  players, confirm with the user whether the game should instead continue
-  until only one player is left holding cards (classic "last one is the
-  shithead" — see Open Questions #2).
+  (with the draw pile also empty) wins, game ends immediately.
+- **Win condition for multiplayer (CONFIRMED by the user): ranked
+  elimination.** Play does *not* stop when the first player finishes. Each
+  player who empties hand + up-cards + down-cards is out, and their finishing
+  position is recorded (1st, 2nd, 3rd...). Play continues with the remaining
+  players until only one is left still holding cards — that player is the
+  shithead. So with seats A→B→C→D: A finishes (1st) and leaves the table, B/C/D
+  play on, C finishes (2nd), D finishes (3rd), B is left holding cards and
+  loses. Turn order must close over a finished seat without skipping a beat,
+  and with two players left the "next player" is simply the other one.
 
 ## New state needed for N players
 
@@ -129,15 +135,18 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 
 ## Open questions to resolve with the user (ask before/while building these parts)
 
-1. **Does the game continue after the first player finishes?** I.e. is this
-   a ranked-elimination game (play continues until only one player remains,
-   who "loses"), or does it end the instant the first player empties their
-   cards (winner-takes-all, no ranking of the rest)?
-2. **Where does the finished multiplayer client get hosted/linked from?**
+1. **Where does the finished multiplayer client get hosted/linked from?**
    Standalone site under its own domain/subpath, or eventually added to the
-   main portfolio's nav/Projects section once it's stable?
-3. **PartyKit account** — confirm the user is fine creating a PartyKit
-   account (free tier) under their own login for this.
+   main portfolio's nav/Projects section once it's stable? (Relevant at
+   milestone 6; the PartyKit deploy URL works fine until then.)
 
-(The 8-reversal rule, previously open, is now confirmed above — don't
-re-ask it.)
+### Resolved — don't re-ask
+
+- **The 8-reversal rule** — confirmed, see the special-cards section above.
+- **Does play continue after the first player finishes?** Yes — ranked
+  elimination, last player holding cards is the shithead. See the win
+  condition section above.
+- **PartyKit account** — confirmed. The user is happy to create a free
+  PartyKit account under their own login and will run `npx partykit login`
+  themselves when it's time to deploy. Local `npm run dev` needs no account,
+  so don't block on this.

@@ -1,0 +1,17 @@
+{
+  "name": "shithead-multiplayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Online multiplayer Shithead (2-4 players) on PartyKit, with authoritative server-side game logic.",
+  "scripts": {
+    "dev": "partykit dev",
+    "deploy": "partykit deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/presence.test.mjs"
+  },
+  "devDependencies": {
+    "partykit": "^0.0.111",
+    "typescript": "^5.4.5",
+    "ws": "^8.22.0"
+  }
+}
