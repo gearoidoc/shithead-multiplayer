@@ -62,8 +62,52 @@
       <h3 class="seats-heading">Players <span id="seat-count" class="muted">(0/4)</span></h3>
       <ul id="seat-list" class="seat-list"></ul>
 
-      <p class="blurb footnote">Game play lands in the next milestone &mdash; for now this is presence only,
-        so you can check two tabs see each other.</p>
+      <div class="room-footer">
+        <button id="start-btn" type="button" hidden>Start game</button>
+        <p id="start-hint" class="blurb"></p>
+      </div>
+      <p id="room-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <!-- Screen 3: the table. Own hand in full, everyone else public only. -->
+    <section id="table-screen" hidden>
+      <div class="table-bar">
+        <span id="table-code" class="table-code">&mdash;</span>
+        <span id="table-phase" class="table-phase"></span>
+        <button id="table-leave-btn" type="button" class="secondary">Leave</button>
+      </div>
+
+      <div id="opponents"></div>
+
+      <div id="table-middle">
+        <div class="pile">
+          <div id="draw-pile" class="pile-slot"></div>
+          <span class="pile-label">Draw</span>
+        </div>
+        <div class="pile">
+          <div id="waste-pile" class="pile-slot"></div>
+          <span class="pile-label">Pile</span>
+        </div>
+      </div>
+
+      <div id="own-area">
+        <h3 class="own-heading"><span id="own-name">You</span></h3>
+        <div class="own-row">
+          <span class="row-label">Face up</span>
+          <div id="own-upcards" class="card-row"></div>
+        </div>
+        <div class="own-row">
+          <span class="row-label">Face down</span>
+          <div id="own-downcards" class="card-row"></div>
+        </div>
+        <div class="own-row">
+          <span class="row-label">Hand</span>
+          <div id="own-hand" class="card-row"></div>
+        </div>
+      </div>
+
+      <p id="table-note" class="blurb footnote"></p>
+      <p id="table-error" class="error" role="alert" hidden></p>
     </section>
   </main>
 

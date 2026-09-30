@@ -5,18 +5,34 @@ import {
   type ConnectionContext,
   type WSMessage,
 } from "partyserver";
+import { deal, type Card } from "./shared/cards";
 import {
   MAX_PLAYERS,
+  MIN_PLAYERS,
   type ClientMessage,
   type ErrorCode,
+  type GameStateMessage,
   type PublicPlayer,
   type RoomPhase,
   type RoomStateMessage,
+  type SeatView,
   type ServerMessage,
 } from "./shared/protocol";
 
-/** A seat, plus anything the server knows that clients must not all see. */
-type Seat = PublicPlayer;
+/**
+ * A seat, plus the cards the server holds for it.
+ *
+ * `hand` and `downcards` must never reach any client except as counts (and
+ * `hand` only reaches its own owner in full). Everything that goes on the
+ * wire is built by `publicPlayer` / `seatView` below, field by field —
+ * deliberately not by spreading a Seat, so that adding a field here can't
+ * silently leak it.
+ */
+type Seat = PublicPlayer & {
+  hand: Card[];
+  upcards: Card[];
+  downcards: Card[];
+};
 
 /**
  * One Durable Object instance == one game room, keyed by its room code.
@@ -40,6 +56,14 @@ export class Room extends Server<Env> {
   private connectionToPlayer = new Map<string, string>();
 
   private phase: RoomPhase = "lobby";
+
+  /** The draw pile. Empty until the game is dealt. */
+  private deck: Card[] = [];
+
+  private wastePile: Card[] = [];
+
+  /** Burned by a 10 or a four-of-a-kind; out of the game entirely. */
+  private burned: Card[] = [];
 
   /** The room code, uppercased for display. */
   private get code(): string {
@@ -68,6 +92,8 @@ export class Room extends Server<Env> {
         return this.handleJoin(msg.playerId, msg.name, conn);
       case "leave":
         return this.handleLeave(conn);
+      case "start-game":
+        return this.handleStartGame(conn);
       default:
         return this.sendError(conn, "bad-message", "Unknown message type.");
     }
@@ -90,7 +116,7 @@ export class Room extends Server<Env> {
 
     const name = typeof rawName === "string" ? rawName.trim().slice(0, 16) : "";
     if (!name) {
-      return this.sendError(conn, "name-required", "Pick a name first.");
+      return this.refuse(conn, "name-required", "Pick a name first.");
     }
 
     const existing = this.seats.find((s) => s.id === playerId);
@@ -100,8 +126,18 @@ export class Room extends Server<Env> {
       existing.name = name;
       existing.connected = true;
     } else {
+      if (this.phase !== "lobby") {
+        // A seat that wasn't dealt in has no cards, so a newcomer can't be
+        // added to a game in progress. Reconnecting players take the branch
+        // above and keep their seat.
+        return this.refuse(
+          conn,
+          "game-in-progress",
+          `The game in room ${this.code} has already started.`,
+        );
+      }
       if (this.seats.length >= MAX_PLAYERS) {
-        return this.sendError(
+        return this.refuse(
           conn,
           "room-full",
           `Room ${this.code} already has ${MAX_PLAYERS} players.`,
@@ -112,6 +148,9 @@ export class Room extends Server<Env> {
         name,
         seat: this.seats.length,
         connected: true,
+        hand: [],
+        upcards: [],
+        downcards: [],
       });
     }
 
@@ -125,20 +164,26 @@ export class Room extends Server<Env> {
     this.connectionToPlayer.set(conn.id, playerId);
 
     this.send(conn, { type: "welcome", you: playerId, code: this.code });
-    this.broadcastRoom();
+    this.broadcastState();
   }
 
-  /** Deliberate exit: give the seat up entirely and renumber the rest. */
+  /**
+   * Deliberate exit. In the lobby the seat is given up and the rest
+   * renumbered; mid-game it can't be, because renumbering would shuffle a
+   * live table's seating, so it degrades to the same handling as a dropped
+   * socket. Abandoning a running game properly is milestone 5's problem.
+   */
   private handleLeave(conn: Connection) {
     const playerId = this.connectionToPlayer.get(conn.id);
     if (!playerId) return;
 
-    this.connectionToPlayer.delete(conn.id);
-    this.seats = this.seats
-      .filter((s) => s.id !== playerId)
-      .map((s, i) => ({ ...s, seat: i }));
+    if (this.phase !== "lobby") return this.handleDisconnect(conn);
 
-    this.broadcastRoom();
+    this.connectionToPlayer.delete(conn.id);
+    this.seats = this.seats.filter((s) => s.id !== playerId);
+    this.renumberSeats();
+
+    this.broadcastState();
   }
 
   /**
@@ -152,15 +197,58 @@ export class Room extends Server<Env> {
     this.connectionToPlayer.delete(conn.id);
 
     if (this.phase === "lobby") {
-      this.seats = this.seats
-        .filter((s) => s.id !== playerId)
-        .map((s, i) => ({ ...s, seat: i }));
+      this.seats = this.seats.filter((s) => s.id !== playerId);
+      this.renumberSeats();
     } else {
       const seat = this.seats.find((s) => s.id === playerId);
       if (seat) seat.connected = false;
     }
 
-    this.broadcastRoom();
+    this.broadcastState();
+  }
+
+  /**
+   * Host only, from the lobby, with at least MIN_PLAYERS seated. Deals and
+   * moves the room into the swap phase.
+   */
+  private handleStartGame(conn: Connection) {
+    const playerId = this.connectionToPlayer.get(conn.id);
+    if (!playerId) return;
+
+    if (this.phase !== "lobby") {
+      return this.sendError(conn, "already-started", "The game is already under way.");
+    }
+    if (playerId !== this.seats[0]?.id) {
+      return this.sendError(conn, "not-host", "Only the host can start the game.");
+    }
+    if (this.seats.length < MIN_PLAYERS) {
+      return this.sendError(
+        conn,
+        "not-enough-players",
+        `You need at least ${MIN_PLAYERS} players to start.`,
+      );
+    }
+
+    const dealt = deal(this.seats.length);
+    this.seats.forEach((seat, i) => {
+      const cards = dealt.hands[i]!;
+      seat.hand = cards.hand;
+      seat.upcards = cards.upcards;
+      seat.downcards = cards.downcards;
+    });
+    this.deck = dealt.deck;
+    this.wastePile = [];
+    this.burned = [];
+
+    this.phase = "swap";
+    this.broadcastState();
+  }
+
+  /** Seats are numbered by position, so the two must be kept in step. */
+  private renumberSeats() {
+    this.seats.forEach((seat, i) => {
+      seat.seat = i;
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -170,9 +258,74 @@ export class Room extends Server<Env> {
       type: "room",
       code: this.code,
       phase: this.phase,
-      players: this.seats.map((s) => ({ ...s })),
+      players: this.seats.map((s) => this.publicPlayer(s)),
       hostId: this.seats[0]?.id ?? null,
     };
+  }
+
+  /**
+   * Built field by field on purpose. A spread of `Seat` would put `hand`,
+   * `upcards` and `downcards` straight onto the wire.
+   */
+  private publicPlayer(seat: Seat): PublicPlayer {
+    return {
+      id: seat.id,
+      name: seat.name,
+      seat: seat.seat,
+      connected: seat.connected,
+    };
+  }
+
+  /** As above: everything here is public by the rules. Counts, not cards. */
+  private seatView(seat: Seat): SeatView {
+    return {
+      id: seat.id,
+      name: seat.name,
+      seat: seat.seat,
+      connected: seat.connected,
+      upcards: seat.upcards.map((card) => ({ ...card })),
+      handCount: seat.hand.length,
+      downcardCount: seat.downcards.length,
+    };
+  }
+
+  /**
+   * The table as one player sees it: their own hand in full, and everyone
+   * else — including themselves — reduced to public information.
+   */
+  private gameStateFor(playerId: string): GameStateMessage {
+    const me = this.seats.find((s) => s.id === playerId);
+    return {
+      type: "game",
+      code: this.code,
+      phase: this.phase,
+      you: playerId,
+      hand: (me?.hand ?? []).map((card) => ({ ...card })),
+      players: this.seats.map((s) => this.seatView(s)),
+      hostId: this.seats[0]?.id ?? null,
+      deckCount: this.deck.length,
+      wasteTop: this.wastePile.at(-1) ?? null,
+      wasteCount: this.wastePile.length,
+      burnedCount: this.burned.length,
+    };
+  }
+
+  /**
+   * Send everyone the view for the current phase. In a game that means one
+   * tailored message per connection, since each player's hand differs —
+   * there is deliberately no shared game-state broadcast to get wrong.
+   *
+   * Named to avoid shadowing PartyServer's own `broadcast()`, which sends to
+   * every connected socket and which this server must never use.
+   */
+  private broadcastState() {
+    if (this.phase === "lobby") return this.broadcastRoom();
+
+    for (const [connectionId, playerId] of this.connectionToPlayer) {
+      this.getConnection(connectionId)?.send(
+        JSON.stringify(this.gameStateFor(playerId)),
+      );
+    }
   }
 
   /**
@@ -192,9 +345,20 @@ export class Room extends Server<Env> {
     conn.send(JSON.stringify(msg));
   }
 
-  /** Refusals are terminal: the socket is told why, then dropped. */
+  /**
+   * A rejected action the player can recover from — they stay in the room.
+   */
   private sendError(conn: Connection, code: ErrorCode, message: string) {
-    this.send(conn, { type: "error", code, message });
+    this.send(conn, { type: "error", code, message, fatal: false });
+  }
+
+  /**
+   * "You can't be in this room": the socket is told why, then dropped. Used
+   * where there's no seat to go back to, so leaving it open would only let
+   * the client sit there receiving nothing.
+   */
+  private refuse(conn: Connection, code: ErrorCode, message: string) {
+    this.send(conn, { type: "error", code, message, fatal: true });
     conn.close(1000, code);
   }
 }

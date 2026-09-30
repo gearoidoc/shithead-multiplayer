@@ -29,14 +29,31 @@ const el = {
   seatList: document.getElementById("seat-list"),
   copyBtn: document.getElementById("copy-btn"),
   leaveBtn: document.getElementById("leave-btn"),
+  startBtn: document.getElementById("start-btn"),
+  startHint: document.getElementById("start-hint"),
+  roomError: document.getElementById("room-error"),
+  app: document.getElementById("app"),
+  table: document.getElementById("table-screen"),
+  tableCode: document.getElementById("table-code"),
+  tablePhase: document.getElementById("table-phase"),
+  tableLeaveBtn: document.getElementById("table-leave-btn"),
+  tableNote: document.getElementById("table-note"),
+  tableError: document.getElementById("table-error"),
+  opponents: document.getElementById("opponents"),
+  drawPile: document.getElementById("draw-pile"),
+  wastePile: document.getElementById("waste-pile"),
+  ownName: document.getElementById("own-name"),
+  ownUpcards: document.getElementById("own-upcards"),
+  ownDowncards: document.getElementById("own-downcards"),
+  ownHand: document.getElementById("own-hand"),
 };
 
-/** @type {{socket: RoomSocket|null, code: string|null, you: string|null, room: any, status: string}} */
 const state = {
-  socket: null,
-  code: null,
-  you: null,
-  room: null,
+  /** @type {RoomSocket|null} */ socket: null,
+  /** @type {string|null} */ code: null,
+  /** @type {string|null} */ you: null,
+  /** Lobby roster, from a `room` message. */ room: null,
+  /** The table from our point of view, from a `game` message. */ game: null,
   status: "connecting",
 };
 
@@ -90,10 +107,10 @@ function joinRoom(code) {
   state.code = code;
   state.you = null;
   state.room = null;
+  state.game = null;
   location.hash = code;
 
-  el.lobby.hidden = true;
-  el.room.hidden = false;
+  showScreen("room");
   el.roomCode.textContent = code;
   el.seatList.replaceChildren();
   el.seatCount.textContent = `(0/${MAX_PLAYERS})`;
@@ -122,10 +139,10 @@ function leaveRoom({ error } = {}) {
   state.code = null;
   state.you = null;
   state.room = null;
+  state.game = null;
 
   history.replaceState(null, "", location.pathname + location.search);
-  el.room.hidden = true;
-  el.lobby.hidden = false;
+  showScreen("lobby");
   showLobbyError(error ?? "");
 }
 
@@ -140,14 +157,46 @@ function handleServerMessage(msg) {
       break;
     case "room":
       state.room = msg;
+      state.game = null;
+      showScreen("room");
       renderRoom();
       break;
+    case "game":
+      state.game = msg;
+      showScreen("table");
+      renderGame();
+      break;
     case "error":
-      // The server only errors on things that make the room unusable for us.
-      leaveRoom({ error: msg.message });
+      if (msg.fatal) {
+        // We can't hold a seat here at all; the server has closed us out.
+        leaveRoom({ error: msg.message });
+      } else {
+        // A rejected action. We're still in the room, so just say so.
+        showTransientError(msg.message);
+      }
       break;
   }
   renderStatus();
+}
+
+/** Which of the three screens is showing. */
+function showScreen(which) {
+  el.lobby.hidden = which !== "lobby";
+  el.room.hidden = which !== "room";
+  el.table.hidden = which !== "table";
+  el.app.classList.toggle("at-table", which === "table");
+}
+
+let transientTimer = null;
+
+function showTransientError(message) {
+  const target = state.game ? el.tableError : el.roomError;
+  target.textContent = message;
+  target.hidden = false;
+  clearTimeout(transientTimer);
+  transientTimer = setTimeout(() => {
+    target.hidden = true;
+  }, 4000);
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +204,10 @@ function handleServerMessage(msg) {
 // ---------------------------------------------------------------------------
 
 function renderStatus() {
-  const { status, room } = state;
+  const { status, room, game } = state;
+
+  // The status line belongs to the lobby screen; the table has its own bar.
+  if (game) return;
 
   if (status === "connecting") {
     return setStatus("Connecting…", "warn");
@@ -225,6 +277,128 @@ function renderRoom() {
   }
 
   el.seatList.replaceChildren(...rows);
+
+  // Only the host gets the button; everyone else is told who they're waiting on.
+  const isHost = you && you === room.hostId;
+  const enough = room.players.length >= 2;
+  el.startBtn.hidden = !isHost;
+  el.startBtn.disabled = !enough;
+
+  if (isHost) {
+    el.startHint.textContent = enough
+      ? "You're the host — start when everyone's in."
+      : "You need at least 2 players to start.";
+  } else {
+    const host = room.players.find((p) => p.id === room.hostId);
+    el.startHint.textContent = host
+      ? `Waiting for ${host.name} to start the game.`
+      : "";
+  }
+}
+
+const PHASE_TEXT = {
+  swap: "Swap phase",
+  playing: "In play",
+  finished: "Game over",
+};
+
+/** A single card face, or its back. Mirrors the single-player markup. */
+function cardEl(card, { faceDown = false, small = false } = {}) {
+  const div = document.createElement("div");
+  div.className = "card";
+  if (small) div.classList.add("small");
+
+  if (faceDown || !card) {
+    div.classList.add("face-down");
+    return div;
+  }
+
+  const red = card.suit === "♥" || card.suit === "♦";
+  div.classList.add(red ? "red" : "black");
+  div.textContent = card.rank + card.suit;
+  return div;
+}
+
+/** `count` face-down backs, for cards we're not entitled to see. */
+function cardBacks(count, options) {
+  return Array.from({ length: count }, () => cardEl(null, { faceDown: true, ...options }));
+}
+
+function fillRow(row, children) {
+  row.replaceChildren(...children);
+  row.classList.toggle("is-empty", children.length === 0);
+}
+
+function renderGame() {
+  const game = state.game;
+  if (!game) return;
+
+  el.tableCode.textContent = game.code;
+  el.tablePhase.textContent = PHASE_TEXT[game.phase] ?? game.phase;
+
+  const me = game.players.find((p) => p.id === game.you);
+  const others = game.players.filter((p) => p.id !== game.you);
+
+  // --- everyone else: up-cards face up, everything else as backs ---------
+  el.opponents.replaceChildren(
+    ...others.map((player) => {
+      const box = document.createElement("div");
+      box.className = "opponent" + (player.connected ? "" : " is-away");
+
+      const head = document.createElement("div");
+      head.className = "opponent-head";
+
+      const name = document.createElement("span");
+      name.className = "opponent-name";
+      name.textContent = player.name;
+      head.append(name);
+
+      if (player.id === game.hostId) head.append(badge("host", "host"));
+      if (!player.connected) head.append(badge("away", "away"));
+
+      const counts = document.createElement("span");
+      counts.className = "opponent-counts";
+      counts.textContent = `${player.handCount} in hand · ${player.downcardCount} down`;
+      head.append(counts);
+
+      const upRow = document.createElement("div");
+      upRow.className = "card-row";
+      fillRow(upRow, [
+        ...player.upcards.map((card) => cardEl(card, { small: true })),
+        ...cardBacks(player.downcardCount, { small: true }),
+      ]);
+
+      box.append(head, upRow);
+      return box;
+    }),
+  );
+
+  // --- the middle ---------------------------------------------------------
+  if (game.deckCount > 0) {
+    el.drawPile.replaceChildren(cardEl(null, { faceDown: true }));
+  } else {
+    el.drawPile.textContent = "empty";
+  }
+  el.drawPile.title = `${game.deckCount} cards left in the draw pile`;
+
+  if (game.wasteTop) {
+    el.wastePile.replaceChildren(cardEl(game.wasteTop));
+  } else {
+    el.wastePile.textContent = "empty";
+  }
+  el.wastePile.title = `${game.wasteCount} cards in the pile`;
+
+  // --- us: hand in full, our own down-cards still face down --------------
+  el.ownName.textContent = me ? `${me.name} (you)` : "You";
+  fillRow(el.ownUpcards, (me?.upcards ?? []).map((card) => cardEl(card)));
+  fillRow(el.ownDowncards, cardBacks(me?.downcardCount ?? 0));
+  fillRow(el.ownHand, game.hand.map((card) => cardEl(card)));
+
+  el.tableNote.textContent =
+    game.phase === "swap"
+      ? "Dealt. Swapping hand cards with your face-up cards is the next step — " +
+        "nothing is clickable yet."
+      : "";
 }
 
 function badge(text, variant) {
@@ -250,6 +424,11 @@ el.code.addEventListener("input", () => {
 });
 
 el.leaveBtn.addEventListener("click", () => leaveRoom());
+el.tableLeaveBtn.addEventListener("click", () => leaveRoom());
+
+el.startBtn.addEventListener("click", () => {
+  state.socket?.send({ type: "start-game" });
+});
 
 el.copyBtn.addEventListener("click", async () => {
   const link = `${location.origin}${location.pathname}#${state.code ?? ""}`;

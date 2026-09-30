@@ -6,6 +6,8 @@
  * Keep `public/app.js` in sync by hand when changing anything here.
  */
 
+import type { Card } from "./cards";
+
 export const MAX_PLAYERS = 4;
 export const MIN_PLAYERS = 2;
 
@@ -23,7 +25,7 @@ export type PublicPlayer = {
   connected: boolean;
 };
 
-/** Phases the room moves through. Only `lobby` exists in milestone 1. */
+/** Phases the room moves through. `playing` and `finished` are not wired up yet. */
 export type RoomPhase = "lobby" | "swap" | "playing" | "finished";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +42,10 @@ export type JoinMessage = {
 /** Deliberate exit (as opposed to a dropped socket), frees the seat. */
 export type LeaveMessage = { type: "leave" };
 
-export type ClientMessage = JoinMessage | LeaveMessage;
+/** Host only, from the lobby, with at least MIN_PLAYERS seated. */
+export type StartGameMessage = { type: "start-game" };
+
+export type ClientMessage = JoinMessage | LeaveMessage | StartGameMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client
@@ -65,12 +70,70 @@ export type RoomStateMessage = {
   hostId: string | null;
 };
 
-export type ErrorCode = "room-full" | "bad-message" | "name-required";
+/**
+ * One seat as everyone at the table is allowed to see it.
+ *
+ * Note what is *not* here: nobody's hand cards, and nobody's face-down
+ * cards — not even your own, since the rules say you play those blind.
+ * Only counts of each. This type is the hidden-information guarantee, so
+ * don't add a `hand` or `downcards` field to it.
+ */
+export type SeatView = {
+  id: string;
+  name: string;
+  seat: number;
+  connected: boolean;
+  /** Face-up cards are public by definition. */
+  upcards: Card[];
+  handCount: number;
+  downcardCount: number;
+};
+
+/**
+ * The table from one player's point of view, sent per-connection — never
+ * broadcast, because `hand` differs for every recipient.
+ */
+export type GameStateMessage = {
+  type: "game";
+  code: string;
+  phase: RoomPhase;
+  /** Which seat in `players` is the recipient. */
+  you: string;
+  /** The recipient's own hand. The only private cards they ever receive. */
+  hand: Card[];
+  /** Ordered by seat. */
+  players: SeatView[];
+  hostId: string | null;
+  deckCount: number;
+  wasteTop: Card | null;
+  wasteCount: number;
+  burnedCount: number;
+};
+
+export type ErrorCode =
+  | "room-full"
+  | "bad-message"
+  | "name-required"
+  | "game-in-progress"
+  | "not-host"
+  | "not-enough-players"
+  | "already-started";
 
 export type ErrorMessage = {
   type: "error";
   code: ErrorCode;
   message: string;
+  /**
+   * True when the refusal means the recipient can't be in this room at all
+   * (the room is full, the game already started) and the server has closed
+   * the socket. False for a rejected action the player can recover from,
+   * like a non-host pressing start — the socket stays open.
+   */
+  fatal: boolean;
 };
 
-export type ServerMessage = WelcomeMessage | RoomStateMessage | ErrorMessage;
+export type ServerMessage =
+  | WelcomeMessage
+  | RoomStateMessage
+  | GameStateMessage
+  | ErrorMessage;

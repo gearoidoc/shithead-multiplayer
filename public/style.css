@@ -71,6 +71,11 @@ body {
   max-width: 460px;
 }
 
+/* The table needs more room than the lobby. */
+#app.at-table {
+  max-width: 900px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
@@ -343,4 +348,229 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
   .actions { flex-wrap: wrap; }
 
   #join-form button { width: 100%; }
+}
+
+
+/* ---------------------------------------------------------------------------
+   The table. Card styling is carried over from the single-player game so the
+   two feel like the same game.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --card-w: 60px;
+  --card-h: 86px;
+}
+
+#table-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.table-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background-color: var(--panel-strong);
+  border-radius: 12px;
+}
+
+.table-code {
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+}
+
+.table-phase {
+  flex: 1;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+#opponents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.opponent {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: var(--panel);
+  border-radius: 12px;
+  border-top: 3px solid transparent;
+}
+
+.opponent.is-away { opacity: 0.55; }
+
+.opponent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.opponent-name {
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opponent-counts {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-left: auto;
+}
+
+#table-middle {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  padding: 8px 0;
+}
+
+.pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.pile-slot {
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 8px;
+  border: 2px dashed rgba(255, 255, 255, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 0.75rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* A slot holding a real card shouldn't also draw the empty outline. */
+.pile-slot:has(.card) {
+  border: none;
+}
+
+.pile-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+#own-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background-color: var(--panel);
+  border-radius: 12px;
+  border-top: 3px solid var(--gold);
+}
+
+.own-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.own-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-label {
+  width: 78px;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: var(--card-h);
+  align-items: center;
+}
+
+.card-row.is-empty::before {
+  content: "—";
+  opacity: 0.4;
+}
+
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 2px solid #cccccc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.05rem;
+  font-weight: bold;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.card.face-down {
+  background-color: #1a237e;
+  background-image: repeating-linear-gradient(
+    45deg,
+    #283593 0px,
+    #283593 2px,
+    #1a237e 2px,
+    #1a237e 10px
+  );
+  color: transparent;
+  border-color: #1a237e;
+}
+
+.card.red { color: #cc0000; }
+.card.black { color: #111111; }
+
+.card.small {
+  --card-w: 42px;
+  --card-h: 60px;
+  font-size: 0.8rem;
+}
+
+.room-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --card-w: 46px;
+    --card-h: 66px;
+  }
+
+  .own-row {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .row-label {
+    width: 56px;
+    padding-top: 6px;
+  }
+
+  #table-middle { gap: 20px; }
+
+  .opponent { flex-basis: 100%; }
 }
