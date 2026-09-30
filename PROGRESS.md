@@ -5,7 +5,8 @@ without re-deriving anything. [`CLAUDE.md`](./CLAUDE.md) holds the stable
 brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
-**Last updated:** 2026-09-30 (milestone 2 complete)
+**Last updated:** 2026-09-30, end of session. Milestones 1-2 done and on
+`main`; milestone 3 not started.
 
 ## Where we are
 
@@ -23,6 +24,25 @@ deployed.**
   clickable yet — no card can be played, and cards can't be swapped.
 - **Tests: 52 passing** — 21 presence (`test/presence.test.mjs`), 31 deal and
   hidden-information (`test/game.test.mjs`).
+
+## Picking this up again
+
+```bash
+cd "Cowork Home/shithead-multiplayer"
+nvm use            # Node 24; the system default is 18 and wrangler refuses it
+npm install        # only if node_modules is missing
+npm run dev        # http://127.0.0.1:8787
+npm test           # in a second terminal, also after nvm use
+```
+
+Everything is committed and pushed, nothing is half-finished, and the live
+deployment matches `main`. The next piece of work is **milestone 3**, planned
+step by step at the bottom of this file.
+
+Two things were left deliberately unverified or undecided, both noted in full
+below: **nobody has watched the table UI in a browser** (no browser
+automation was available), and the **first-player tie-break is an assumption,
+not your decision** — earliest seat wins when players tie on the lowest card.
 
 ## Milestones
 
