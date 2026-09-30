@@ -17,14 +17,30 @@ single-player page — that stays as-is.
 
 ## Decisions already made (don't re-litigate without checking back with the user)
 
-- **Realtime layer: PartyKit** (Cloudflare Durable Objects under the hood).
-  One PartyKit room instance = one game room, with authoritative game logic
+- **Realtime layer: Cloudflare Durable Objects, via PartyServer.**
+  One Durable Object instance = one game room, with authoritative game logic
   running server-side in the room's own code (TypeScript), not in the browser.
   Chosen over a self-hosted Node/WebSocket server (more ops burden) and over
   peer-to-peer/WebRTC (can't keep hands hidden from a technical opponent —
   hidden information is core to this game).
-- **Repo: brand-new, separate from `gearoidoc.github.io`** (e.g.
-  `gearoidoc/shithead-multiplayer`). Keep the portfolio repo purely static.
+  - **Originally this was PartyKit's hosted platform, and that didn't work
+    out (2026-09-30).** PartyKit development has moved to `cloudflare/partykit`
+    since the acquisition, and its shared `partykit.dev` zone has hit
+    Cloudflare's 10,000-custom-domains-per-zone limit, so `partykit deploy`
+    cannot provision a hostname for a new project at all. It fails with
+    "You have exceeded the limit of 10000 Workers custom domains on zone
+    'partykit.dev'", and registers a project whose URL has no DNS record.
+    Don't try the hosted PartyKit platform again.
+  - The room server now extends `Server` from **`partyserver`** (the
+    maintained Cloudflare successor, near-identical API) and deploys with
+    **wrangler** to the user's own Cloudflare account, whose zone limits are
+    its own. Keep the framework surface thin — it's ~18 lines of
+    `src/server.ts` — so this stays portable.
+  - The URL namespace for rooms comes from the Durable Object *binding name*
+    in `wrangler.jsonc` (`Room`), kebab-cased: `/parties/room/<code>`.
+    PartyServer has no `main` party, unlike PartyKit.
+- **Repo: brand-new, separate from `gearoidoc.github.io`**
+  (`gearoidoc/shithead-multiplayer`). Keep the portfolio repo purely static.
 - **Join flow: room code.** No public room list / matchmaking for v1.
 - **Up to 4 players per room**, not just 2.
 - **No AI opponent in multiplayer rooms for v1** (stretch goal: allow filling
@@ -39,7 +55,8 @@ hand, and (b) public info about everyone else (up-cards, down-card *counts*,
 waste pile, whose turn it is). No client ever receives data it shouldn't be
 able to see. Don't compromise this for convenience later.
 
-## Game rules to port (reference: `gearoidoc.github.io/shithead/game.js`)
+## Game rules to port (reference: `../gearoidoc.github.io/shithead/game.js`,
+checked out alongside this repo)
 
 These are implemented today for exactly 2 players (`gameState.player` vs
 `gameState.ai`) and need generalizing to N players (2-4):
@@ -113,6 +130,10 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 
 ## Non-functional requirements
 
+- **Node 22+ is required** (wrangler refuses to run on anything older). The
+  system Node on this machine is 18.19.1 from apt; Node 24 LTS is installed
+  via nvm alongside it and pinned in `.nvmrc`. Run `nvm use` before any npm
+  script, or node scripts will silently use 18.
 - Leave `gearoidoc.github.io/shithead` untouched.
 - Visual style: match the existing dark green table look (see
   `shithead/style.css`) for consistency to start; free to evolve later.
@@ -121,8 +142,9 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 
 ## Suggested first milestones
 
-1. Scaffold the new repo + PartyKit project. A bare room that two browser
-   tabs can join and see each other's presence — no game logic yet.
+1. ~~Scaffold the new repo + realtime project. A bare room that two browser
+   tabs can join and see each other's presence — no game logic yet.~~
+   **Done** (milestone 1).
 2. Port the deal/shuffle/state model into the room server; render each
    client's own hand plus everyone else's public info only.
 3. Port `canPlayCard`/`handleSpecialCards` server-side for 2 players first;

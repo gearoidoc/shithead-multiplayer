@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shithead-multiplayer",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-09-30",
+
+  // One Durable Object instance per game room. The binding name is also the
+  // URL namespace the client connects through, kebab-cased:
+  //   /parties/room/<room code>
+  "durable_objects": {
+    "bindings": [{ "name": "Room", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+
+  // The client is served from the same origin as the room server, so
+  // socket.js can derive the WebSocket host from location.host.
+  "assets": { "directory": "./public" },
+
+  "observability": { "enabled": true }
+}

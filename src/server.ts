@@ -1,4 +1,10 @@
-import type * as Party from "partykit/server";
+import {
+  Server,
+  routePartykitRequest,
+  type Connection,
+  type ConnectionContext,
+  type WSMessage,
+} from "partyserver";
 import {
   MAX_PLAYERS,
   type ClientMessage,
@@ -13,19 +19,19 @@ import {
 type Seat = PublicPlayer;
 
 /**
- * One PartyKit room instance == one game room, keyed by its room code.
+ * One Durable Object instance == one game room, keyed by its room code.
  *
  * Milestone 1: presence only. The room tracks who is seated, who is
  * currently connected, and broadcasts that roster. Game state (deck, hands)
  * will live here too, and the authoritative rules engine with it — clients
  * only ever receive what they are allowed to see.
  */
-export default class ShitheadRoom implements Party.Server {
+export class Room extends Server<Env> {
   /**
    * No hibernation: rooms hold live game state in memory and only exist for
    * the length of a game, so we keep the instance awake while anyone is in it.
    */
-  readonly options: Party.ServerOptions = { hibernate: false };
+  static options = { hibernate: false };
 
   /** Seats in join order. Index === seat number. */
   private seats: Seat[] = [];
@@ -35,19 +41,21 @@ export default class ShitheadRoom implements Party.Server {
 
   private phase: RoomPhase = "lobby";
 
-  constructor(readonly room: Party.Room) {}
-
   /** The room code, uppercased for display. */
   private get code(): string {
-    return this.room.id.toUpperCase();
+    return this.name.toUpperCase();
   }
 
-  onConnect(_conn: Party.Connection, _ctx: Party.ConnectionContext) {
+  onConnect(_conn: Connection, _ctx: ConnectionContext) {
     // Nothing yet: a socket is anonymous until it sends `join`. Sending the
     // roster before then would leak the room contents to any idle connection.
   }
 
-  onMessage(raw: string, conn: Party.Connection) {
+  onMessage(conn: Connection, raw: WSMessage) {
+    if (typeof raw !== "string") {
+      return this.sendError(conn, "bad-message", "Expected a text message.");
+    }
+
     let msg: ClientMessage;
     try {
       msg = JSON.parse(raw) as ClientMessage;
@@ -65,17 +73,17 @@ export default class ShitheadRoom implements Party.Server {
     }
   }
 
-  onClose(conn: Party.Connection) {
+  onClose(conn: Connection) {
     this.handleDisconnect(conn);
   }
 
-  onError(conn: Party.Connection) {
+  onError(conn: Connection) {
     this.handleDisconnect(conn);
   }
 
   // -------------------------------------------------------------------------
 
-  private handleJoin(playerId: string, rawName: string, conn: Party.Connection) {
+  private handleJoin(playerId: string, rawName: string, conn: Connection) {
     if (typeof playerId !== "string" || !playerId) {
       return this.sendError(conn, "bad-message", "Missing player id.");
     }
@@ -111,7 +119,7 @@ export default class ShitheadRoom implements Party.Server {
     for (const [connectionId, boundPlayerId] of this.connectionToPlayer) {
       if (boundPlayerId === playerId && connectionId !== conn.id) {
         this.connectionToPlayer.delete(connectionId);
-        this.room.getConnection(connectionId)?.close();
+        this.getConnection(connectionId)?.close();
       }
     }
     this.connectionToPlayer.set(conn.id, playerId);
@@ -121,7 +129,7 @@ export default class ShitheadRoom implements Party.Server {
   }
 
   /** Deliberate exit: give the seat up entirely and renumber the rest. */
-  private handleLeave(conn: Party.Connection) {
+  private handleLeave(conn: Connection) {
     const playerId = this.connectionToPlayer.get(conn.id);
     if (!playerId) return;
 
@@ -138,7 +146,7 @@ export default class ShitheadRoom implements Party.Server {
    * reclaim it. In the lobby there's no game to preserve, so an unoccupied
    * seat is released outright.
    */
-  private handleDisconnect(conn: Party.Connection) {
+  private handleDisconnect(conn: Connection) {
     const playerId = this.connectionToPlayer.get(conn.id);
     if (!playerId) return;
     this.connectionToPlayer.delete(conn.id);
@@ -169,26 +177,38 @@ export default class ShitheadRoom implements Party.Server {
 
   /**
    * Only ever send room contents to sockets that hold a seat. Using
-   * `room.broadcast` would also reach sockets that haven't joined, or were
+   * `broadcast()` would also reach sockets that haven't joined, or were
    * refused one — which is exactly the kind of leak this server exists to
    * avoid, and matters far more once hands are in play.
    */
   private broadcastRoom() {
     const payload = JSON.stringify(this.roomState());
     for (const connectionId of this.connectionToPlayer.keys()) {
-      this.room.getConnection(connectionId)?.send(payload);
+      this.getConnection(connectionId)?.send(payload);
     }
   }
 
-  private send(conn: Party.Connection, msg: ServerMessage) {
+  private send(conn: Connection, msg: ServerMessage) {
     conn.send(JSON.stringify(msg));
   }
 
   /** Refusals are terminal: the socket is told why, then dropped. */
-  private sendError(conn: Party.Connection, code: ErrorCode, message: string) {
+  private sendError(conn: Connection, code: ErrorCode, message: string) {
     this.send(conn, { type: "error", code, message });
     conn.close(1000, code);
   }
 }
 
-ShitheadRoom satisfies Party.Worker;
+/**
+ * Static assets (the client) are served by the assets handler configured in
+ * wrangler.jsonc; anything under /parties/room/<code> is routed to the room
+ * Durable Object above.
+ */
+export default {
+  async fetch(request, env) {
+    return (
+      (await routePartykitRequest(request, env)) ??
+      new Response("Not found", { status: 404 })
+    );
+  },
+} satisfies ExportedHandler<Env>;

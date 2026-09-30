@@ -7,9 +7,9 @@
 
 import WebSocket from "ws";
 
-const HOST = process.env.PARTY_HOST ?? "127.0.0.1:1999";
+const HOST = process.env.PARTY_HOST ?? "127.0.0.1:8787";
 const ROOM = `test-${Math.random().toString(36).slice(2, 8)}`;
-const URL = `ws://${HOST}/parties/main/${ROOM}`;
+const URL = `ws://${HOST}/parties/room/${ROOM}`;
 
 const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 

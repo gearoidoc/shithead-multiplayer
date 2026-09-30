@@ -1,7 +1,0 @@
-{
-  "$schema": "https://www.partykit.io/schema.json",
-  "name": "shithead-multiplayer",
-  "main": "src/server.ts",
-  "compatibilityDate": "2025-01-01",
-  "serve": "public"
-}

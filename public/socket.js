@@ -1,22 +1,25 @@
 /**
- * Thin reconnecting WebSocket wrapper for a PartyKit room.
+ * Thin reconnecting WebSocket wrapper for a room.
  *
  * Deliberately dependency-free (and so build-step-free, like the
- * single-player version): PartyKit exposes rooms at a stable URL,
+ * single-player version): the server exposes rooms at a stable URL,
  *   /parties/<party name>/<room id>
  * which is all we need. Auto-reconnect lives here so milestone 5 can build
  * rejoin/resume on top of it.
  */
 
-/** PartyKit's default party name for `main` in partykit.json. */
-const PARTY_NAME = "main";
+/**
+ * The URL namespace for rooms: PartyServer derives it from the Durable
+ * Object binding name in wrangler.jsonc (`Room`), kebab-cased.
+ */
+const PARTY_NAME = "room";
 
 /** Where the room server lives, when it isn't serving this page itself. */
-const DEV_HOST = "127.0.0.1:1999";
+const DEV_HOST = "127.0.0.1:8787";
 
 /**
- * The client is served by the PartyKit dev server (and by the deployed
- * project) so same-origin is the normal case. `?host=` overrides it, for when
+ * The client is served by the same Worker as the room server, in dev and
+ * when deployed, so same-origin is the normal case. `?host=` overrides it, for when
  * the static client ends up hosted somewhere else.
  */
 export function partyHost() {
