@@ -5,12 +5,15 @@ Live online multiplayer version of [Shithead](https://gearoidocallaghan.com/shit
 [gearoidocallaghan.com](https://gearoidocallaghan.com).
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full project brief: architecture
-decisions, the rules to port, open questions, and milestones.
+decisions, the rules to port, open questions, and milestones, and
+[`PROGRESS.md`](./PROGRESS.md) for where the build currently stands.
 
 ## Status
 
-**Milestone 1 done: rooms and presence.** No game logic yet — you can create a
-room, share the code, and watch players come and go.
+**Milestone 1 done: rooms and presence**, live at
+[shithead-multiplayer.itsgearofroad.workers.dev](https://shithead-multiplayer.itsgearofroad.workers.dev).
+No game logic yet — you can create a room, share the code, and watch players
+come and go.
 
 ## Running it
 

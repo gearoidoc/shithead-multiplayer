@@ -3,13 +3,18 @@
  *
  * Needs a dev server running:  npm run dev   (then, separately)  npm test
  * Each run uses a fresh random room so repeated runs don't collide.
+ *
+ * Point it at a deployment instead with:
+ *   PARTY_HOST=shithead-multiplayer.<subdomain>.workers.dev npm test
  */
 
 import WebSocket from "ws";
 
 const HOST = process.env.PARTY_HOST ?? "127.0.0.1:8787";
 const ROOM = `test-${Math.random().toString(36).slice(2, 8)}`;
-const URL = `ws://${HOST}/parties/room/${ROOM}`;
+/** Local dev is plain ws; anything else (a real deployment) is wss. */
+const LOCAL = /^(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])(:|$)/.test(HOST);
+const URL = `${LOCAL ? "ws" : "wss"}://${HOST}/parties/room/${ROOM}`;
 
 const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
