@@ -479,8 +479,28 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
 
 .own-heading {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.own-heading button { margin-left: auto; }
+
+#ready-btn.is-ready {
+  background-color: var(--gold);
+  color: #111;
+  border-color: var(--gold);
+}
+
+.seat-badge.ready {
+  background-color: rgba(255, 215, 0, 0.25);
+  color: var(--gold);
+}
+
+.seat-badge.turn {
+  background-color: var(--gold);
+  color: #111;
+  font-weight: bold;
 }
 
 .own-row {
@@ -541,6 +561,20 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
 
 .card.red { color: #cc0000; }
 .card.black { color: #111111; }
+
+/* Only cards you can actually act on get the affordance. */
+.card.clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.card.clickable:hover { transform: translateY(-8px); }
+
+.card.selected {
+  transform: translateY(-16px);
+  border-color: var(--gold);
+  box-shadow: 0 0 10px var(--gold);
+}
 
 .card.small {
   --card-w: 42px;

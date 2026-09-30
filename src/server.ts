@@ -5,7 +5,7 @@ import {
   type ConnectionContext,
   type WSMessage,
 } from "partyserver";
-import { deal, type Card } from "./shared/cards";
+import { FIRST_PLAYER_RANK_ORDER, deal, type Card } from "./shared/cards";
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -32,6 +32,8 @@ type Seat = PublicPlayer & {
   hand: Card[];
   upcards: Card[];
   downcards: Card[];
+  /** Done swapping. Only meaningful during the swap phase. */
+  ready: boolean;
 };
 
 /**
@@ -65,6 +67,12 @@ export class Room extends Server<Env> {
   /** Burned by a 10 or a four-of-a-kind; out of the game entirely. */
   private burned: Card[] = [];
 
+  /** Whose turn it is. Null until the swap phase ends. */
+  private currentPlayerId: string | null = null;
+
+  /** 1 plays up through the seats, -1 plays down. A single 8 reverses it. */
+  private turnDirection: 1 | -1 = 1;
+
   /** The room code, uppercased for display. */
   private get code(): string {
     return this.name.toUpperCase();
@@ -94,6 +102,10 @@ export class Room extends Server<Env> {
         return this.handleLeave(conn);
       case "start-game":
         return this.handleStartGame(conn);
+      case "swap":
+        return this.handleSwap(conn, msg.handIndex, msg.upcardIndex);
+      case "ready":
+        return this.handleReady(conn, msg.ready);
       default:
         return this.sendError(conn, "bad-message", "Unknown message type.");
     }
@@ -151,6 +163,7 @@ export class Room extends Server<Env> {
         hand: [],
         upcards: [],
         downcards: [],
+        ready: false,
       });
     }
 
@@ -239,9 +252,97 @@ export class Room extends Server<Env> {
     this.deck = dealt.deck;
     this.wastePile = [];
     this.burned = [];
+    this.currentPlayerId = null;
+    this.turnDirection = 1;
+    this.seats.forEach((seat) => {
+      seat.ready = false;
+    });
 
     this.phase = "swap";
     this.broadcastState();
+  }
+
+  /**
+   * Swap one of the sender's hand cards with one of their own face-up cards.
+   * Both indices address that player's own cards only — the seat comes from
+   * the connection, so one player can't reach into another's.
+   */
+  private handleSwap(conn: Connection, handIndex: number, upcardIndex: number) {
+    const seat = this.seatFor(conn);
+    if (!seat) return;
+
+    if (this.phase !== "swap") {
+      return this.sendError(conn, "wrong-phase", "Cards can only be swapped before play starts.");
+    }
+
+    const handCard = seat.hand[handIndex];
+    const upcard = seat.upcards[upcardIndex];
+    if (!Number.isInteger(handIndex) || !Number.isInteger(upcardIndex) || !handCard || !upcard) {
+      return this.sendError(conn, "bad-card", "That isn't one of your cards.");
+    }
+
+    seat.hand[handIndex] = upcard;
+    seat.upcards[upcardIndex] = handCard;
+
+    // Changing your mind un-readies you, rather than being refused outright.
+    seat.ready = false;
+
+    this.broadcastState();
+  }
+
+  /**
+   * Mark the sender done (or not) swapping. Once every connected player is
+   * ready, the swap phase ends and play begins.
+   */
+  private handleReady(conn: Connection, ready: boolean) {
+    const seat = this.seatFor(conn);
+    if (!seat) return;
+
+    if (this.phase !== "swap") {
+      return this.sendError(conn, "wrong-phase", "There's nothing to be ready for.");
+    }
+
+    seat.ready = ready !== false;
+
+    // Disconnected seats aren't waited on — otherwise one dropped player
+    // would stall the table indefinitely.
+    const waitingOn = this.seats.filter((s) => s.connected && !s.ready);
+    if (waitingOn.length === 0) {
+      this.phase = "playing";
+      this.currentPlayerId = this.determineFirstPlayer();
+    }
+
+    this.broadcastState();
+  }
+
+  /**
+   * Who leads: whoever holds the lowest card in hand or face-up, walking
+   * `3,4,...,K,A,2`. Generalised from the single-player version's two-player
+   * comparison to any number of seats.
+   *
+   * **Tie-break:** when several players hold the lowest rank, the earliest
+   * seat wins. The single-player version had the same bias (it checked the
+   * human before the AI), and this keeps it deterministic. If the real-life
+   * house rule differs, this is the one line to change.
+   */
+  private determineFirstPlayer(): string | null {
+    for (const rank of FIRST_PLAYER_RANK_ORDER) {
+      const holder = this.seats.find(
+        (seat) =>
+          seat.hand.some((card) => card.rank === rank) ||
+          seat.upcards.some((card) => card.rank === rank),
+      );
+      if (holder) return holder.id;
+    }
+    // Only reachable if nobody holds a card at all.
+    return this.seats[0]?.id ?? null;
+  }
+
+  /** The seat this connection is sitting in, if it holds one. */
+  private seatFor(conn: Connection): Seat | undefined {
+    const playerId = this.connectionToPlayer.get(conn.id);
+    if (!playerId) return undefined;
+    return this.seats.find((s) => s.id === playerId);
   }
 
   /** Seats are numbered by position, so the two must be kept in step. */
@@ -286,6 +387,7 @@ export class Room extends Server<Env> {
       upcards: seat.upcards.map((card) => ({ ...card })),
       handCount: seat.hand.length,
       downcardCount: seat.downcards.length,
+      ready: seat.ready,
     };
   }
 
@@ -307,6 +409,8 @@ export class Room extends Server<Env> {
       wasteTop: this.wastePile.at(-1) ?? null,
       wasteCount: this.wastePile.length,
       burnedCount: this.burned.length,
+      currentPlayerId: this.currentPlayerId,
+      turnDirection: this.turnDirection,
     };
   }
 

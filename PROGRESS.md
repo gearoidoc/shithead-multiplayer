@@ -5,7 +5,7 @@ without re-deriving anything. [`CLAUDE.md`](./CLAUDE.md) holds the stable
 brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
-**Last updated:** 2026-09-30 (milestone 2 in progress)
+**Last updated:** 2026-09-30 (milestone 2 complete)
 
 ## Where we are
 
@@ -29,18 +29,21 @@ deployed.**
 | # | Milestone | State |
 | --- | --- | --- |
 | 1 | Scaffold + a room two tabs can join | **done**, deployed |
-| 2 | Deal/shuffle in the room server; per-player views | **nearly done**, see below |
-| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | not started |
+| 2 | Deal/shuffle in the room server; per-player views | **done**, deployed |
+| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **next** |
 | 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | not started |
 | 5 | Room join by code, reconnect handling | partly done, see below |
 | 6 | Polish: visuals, mobile, link back to the portfolio | not started |
 
-What's done in milestone 2: shuffle and deal (`src/shared/cards.ts`),
-per-seat game state on the server, the per-player view protocol, a host-only
-start-game action moving `lobby` -> `swap`, and a table screen that renders
-it. **What's left: the swap actions themselves** — swapping a hand card with
-one of your own face-up cards, and a per-player "ready" that ends the swap
-phase.
+Milestone 2 in full: shuffle and deal (`src/shared/cards.ts`), per-seat game
+state, the per-player view protocol, a host-only start moving `lobby` ->
+`swap`, click-to-swap on your own cards, a per-player ready flag that ends
+the swap phase, and first-player determination generalised to 2-4 seats.
+
+Milestone 4's turn-order work is partly done as a side effect: the room
+carries `currentPlayerId` and `turnDirection`, and `determineFirstPlayer()`
+already handles any number of seats. What milestone 4 still owns is advancing
+the turn, the single-8 reversal, and elimination.
 
 Milestone 5 came largely free: room codes, `#CODE` invite links, a
 `localStorage` player id that reclaims a seat, a reconnecting socket with
@@ -98,12 +101,19 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
   (room full, game already started, no name) closes the socket; a rejected
   action (not the host, not enough players) leaves the player in place with a
   message. The client branches on the flag rather than knowing the codes.
-- **2026-09-30 — first-player determination is still open for N players.**
-  The single-player version walks rank order `3..A,2` and, when both players
-  hold the lowest rank, silently favours the human. With 2-4 seats that tie
-  needs a rule; nothing is implemented yet, so milestone 4 must decide it
-  (suggestion: lowest seat index wins the tie, which is deterministic and
-  matches the old bias toward the "first" player).
+- **2026-09-30 — first-player tie-break: the earliest seat wins. ASSUMED,
+  NOT CONFIRMED BY THE USER.** Whoever holds the lowest card by `3..K,A,2`
+  across hand and up-cards leads; when several players hold that rank, the
+  lowest seat index wins. The single-player version had the same bias (it
+  checked the human before the AI) and this keeps it deterministic. It was
+  raised with the user and implemented under the stated assumption so the
+  swap phase could end in something coherent — **if the house rule differs,
+  it's the one `find` in `determineFirstPlayer()` in `src/server.ts`.**
+- **2026-09-30 — swapping after readying un-readies you**, rather than being
+  refused. Changing your mind is the more forgiving behaviour and costs
+  nothing, since the phase ends the moment everyone is ready anyway.
+- **2026-09-30 — disconnected players aren't waited on to end the swap
+  phase.** Otherwise one dropped player stalls the table indefinitely.
 
 ## Landmines
 
@@ -141,25 +151,42 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 - **Leaving mid-game doesn't free the seat**, because renumbering would
   reshuffle a live table's seating order. It degrades to the same handling
   as a dropped socket.
+- **No fixed sleeps in tests.** `test/harness.mjs` waits on conditions
+  (`waitFor`, `waitForType`, `waitForNext`) because fixed delays pass
+  locally and then fail against a deployment, where a round trip is an order
+  of magnitude slower. That actually happened: the suite scored 13/31 against
+  the live URL right after a deploy and passed on a retry, which is the worst
+  kind of test failure. Use `QUIET_MS` only for asserting that nothing
+  *further* arrives.
+- **Client-side card indices are only valid against the state they came
+  from.** Swap messages carry `handIndex`/`upcardIndex`, so the selection is
+  cleared whenever a new game view arrives. The server validates bounds and
+  integer-ness regardless — it never trusts an index.
 
 ## Next step, concretely
 
-Finish the swap phase, then milestone 3 (the rules engine).
+Milestone 3: the rules engine, server-side, validated against the
+single-player game with 2 players before going to 3-4.
 
-1. **Swap actions.** Add `{ type: "swap", handIndex, upcardIndex }` and
-   `{ type: "ready" }` to the protocol. Server-side, validate the phase and
-   the indices, swap within the player's *own* cards only, and track who is
-   ready; when every connected player is ready, move `phase` to `playing`.
-   Reference: `swapCards()` / `finishSwap()` in
-   `../gearoidoc.github.io/shithead/game.js`.
-2. Make the cards clickable on the table screen for that: select a hand card,
-   then an up-card, to swap. The `.card.selected` style is already carried
-   over in the single-player CSS if you want it.
-3. Then milestone 3: port `canPlayCard` / `handleSpecialCards` /
-   `playCards` / `burnPile` / `pickUpPile` / `drawBackUpToThree`
-   server-side for 2 players, validating against the single-player game.
-4. Milestone 4 needs a decision on the first-player tie-break (see
-   Decisions above) before `determineFirstPlayer` can be generalised.
+1. Port from `../gearoidoc.github.io/shithead/game.js`, in roughly this
+   order: `getTopCard`, `isUnder7Rule`, `isSpecialRank`, `canPlayCard`,
+   then `playCards`, `handleSpecialCards`, `isFourOfAKind`, `burnPile`,
+   `pickUpPile`, `drawBackUpToThree`, `checkWinCondition`.
+2. Add the play actions to the protocol: playing one or more cards of the
+   same rank from hand, up-cards or (blind) down-cards, and picking up the
+   pile. The server must validate the source as well as the cards — a client
+   asking to play from its down-cards while it still holds a hand is
+   cheating, not a UI bug.
+3. Special cards, from `CLAUDE.md`: 2 resets, 7 forces the next play low,
+   8 is always playable, 10 burns the pile and goes again, four-of-a-kind on
+   top burns. The 8-reversal is 3-4 player behaviour, so it belongs with
+   milestone 4, but leave room for it.
+4. Extend the test suites the same way: a `play.test.mjs` sibling, and keep
+   asserting the hidden-information properties after every new action — a
+   down-card play is the first time a card becomes public, so it's the most
+   likely place to leak one early.
+5. Elimination and ranking (`CLAUDE.md`, confirmed: last player holding
+   cards is the shithead) lands with milestone 4's turn order.
 
 Remaining open question from the brief, only relevant at milestone 6: where
 the client gets linked from (standalone vs. the portfolio's Projects nav).

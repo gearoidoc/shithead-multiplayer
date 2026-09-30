@@ -46,6 +46,8 @@ const el = {
   ownUpcards: document.getElementById("own-upcards"),
   ownDowncards: document.getElementById("own-downcards"),
   ownHand: document.getElementById("own-hand"),
+  readyBtn: document.getElementById("ready-btn"),
+  swapHint: document.getElementById("swap-hint"),
 };
 
 const state = {
@@ -54,6 +56,8 @@ const state = {
   /** @type {string|null} */ you: null,
   /** Lobby roster, from a `room` message. */ room: null,
   /** The table from our point of view, from a `game` message. */ game: null,
+  /** Hand card picked for a swap, awaiting an up-card. Index, or null. */
+  selectedHandIndex: null,
   status: "connecting",
 };
 
@@ -163,6 +167,8 @@ function handleServerMessage(msg) {
       break;
     case "game":
       state.game = msg;
+      // Indices are only meaningful against the state they were read from.
+      if (msg.phase !== "swap") state.selectedHandIndex = null;
       showScreen("table");
       renderGame();
       break;
@@ -353,7 +359,8 @@ function renderGame() {
       name.textContent = player.name;
       head.append(name);
 
-      if (player.id === game.hostId) head.append(badge("host", "host"));
+      if (player.id === game.currentPlayerId) head.append(badge("their turn", "turn"));
+      if (game.phase === "swap" && player.ready) head.append(badge("ready", "ready"));
       if (!player.connected) head.append(badge("away", "away"));
 
       const counts = document.createElement("span");
@@ -390,14 +397,79 @@ function renderGame() {
 
   // --- us: hand in full, our own down-cards still face down --------------
   el.ownName.textContent = me ? `${me.name} (you)` : "You";
-  fillRow(el.ownUpcards, (me?.upcards ?? []).map((card) => cardEl(card)));
+
+  const swapping = game.phase === "swap";
+  const selected = state.selectedHandIndex;
+
+  // During the swap phase: pick a hand card, then the up-card to trade it for.
+  fillRow(
+    el.ownHand,
+    game.hand.map((card, index) => {
+      const div = cardEl(card);
+      if (!swapping) return div;
+
+      div.classList.add("clickable");
+      if (index === selected) div.classList.add("selected");
+      div.addEventListener("click", () => {
+        state.selectedHandIndex = selected === index ? null : index;
+        renderGame();
+      });
+      return div;
+    }),
+  );
+
+  fillRow(
+    el.ownUpcards,
+    (me?.upcards ?? []).map((card, index) => {
+      const div = cardEl(card);
+      if (!swapping || selected === null) return div;
+
+      div.classList.add("clickable");
+      div.addEventListener("click", () => {
+        state.socket?.send({
+          type: "swap",
+          handIndex: selected,
+          upcardIndex: index,
+        });
+        state.selectedHandIndex = null;
+      });
+      return div;
+    }),
+  );
+
   fillRow(el.ownDowncards, cardBacks(me?.downcardCount ?? 0));
-  fillRow(el.ownHand, game.hand.map((card) => cardEl(card)));
+
+  // --- swap controls ------------------------------------------------------
+  el.readyBtn.hidden = !swapping;
+  if (swapping) {
+    el.readyBtn.textContent = me?.ready ? "Ready — change my mind" : "I'm done swapping";
+    el.readyBtn.classList.toggle("is-ready", !!me?.ready);
+
+    const waiting = game.players.filter((p) => p.connected && !p.ready).length;
+    el.swapHint.textContent = me?.ready
+      ? waiting === 0
+        ? "Everyone's ready."
+        : `Waiting for ${waiting} other ${waiting === 1 ? "player" : "players"}.`
+      : selected === null
+        ? "Swap any hand card for one of your face-up cards: pick a hand card first."
+        : "Now pick the face-up card to trade it for.";
+  } else {
+    el.swapHint.textContent = "";
+  }
+
+  // --- whose turn ---------------------------------------------------------
+  if (game.phase === "playing") {
+    const current = game.players.find((p) => p.id === game.currentPlayerId);
+    el.tablePhase.textContent = current
+      ? current.id === game.you
+        ? "Your turn"
+        : `${current.name}'s turn`
+      : "In play";
+  }
 
   el.tableNote.textContent =
-    game.phase === "swap"
-      ? "Dealt. Swapping hand cards with your face-up cards is the next step — " +
-        "nothing is clickable yet."
+    game.phase === "playing"
+      ? "Play itself is the next milestone — the lead has been worked out, but no card can be played yet."
       : "";
 }
 
@@ -428,6 +500,11 @@ el.tableLeaveBtn.addEventListener("click", () => leaveRoom());
 
 el.startBtn.addEventListener("click", () => {
   state.socket?.send({ type: "start-game" });
+});
+
+el.readyBtn.addEventListener("click", () => {
+  const me = state.game?.players.find((p) => p.id === state.game.you);
+  state.socket?.send({ type: "ready", ready: !me?.ready });
 });
 
 el.copyBtn.addEventListener("click", async () => {

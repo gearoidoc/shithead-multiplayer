@@ -45,7 +45,29 @@ export type LeaveMessage = { type: "leave" };
 /** Host only, from the lobby, with at least MIN_PLAYERS seated. */
 export type StartGameMessage = { type: "start-game" };
 
-export type ClientMessage = JoinMessage | LeaveMessage | StartGameMessage;
+/**
+ * Swap one of your hand cards with one of your own face-up cards, during the
+ * swap phase. Both indices address the sender's own cards — there is no
+ * player field, because the server takes that from the connection.
+ */
+export type SwapMessage = {
+  type: "swap";
+  handIndex: number;
+  upcardIndex: number;
+};
+
+/**
+ * Mark yourself done swapping (or not, with `ready: false`). Play begins
+ * once every connected player is ready.
+ */
+export type ReadyMessage = { type: "ready"; ready: boolean };
+
+export type ClientMessage =
+  | JoinMessage
+  | LeaveMessage
+  | StartGameMessage
+  | SwapMessage
+  | ReadyMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client
@@ -87,6 +109,8 @@ export type SeatView = {
   upcards: Card[];
   handCount: number;
   downcardCount: number;
+  /** Done swapping. Meaningless outside the swap phase. */
+  ready: boolean;
 };
 
 /**
@@ -108,6 +132,10 @@ export type GameStateMessage = {
   wasteTop: Card | null;
   wasteCount: number;
   burnedCount: number;
+  /** Whose turn it is. Null until the swap phase ends. */
+  currentPlayerId: string | null;
+  /** 1 plays up through the seats, -1 plays down. Reversed by a single 8. */
+  turnDirection: 1 | -1;
 };
 
 export type ErrorCode =
@@ -117,7 +145,9 @@ export type ErrorCode =
   | "game-in-progress"
   | "not-host"
   | "not-enough-players"
-  | "already-started";
+  | "already-started"
+  | "wrong-phase"
+  | "bad-card";
 
 export type ErrorMessage = {
   type: "error";

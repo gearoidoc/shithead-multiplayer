@@ -20,6 +20,15 @@ export const VALUES: Record<Rank, number> = {
   "10": 10, J: 11, Q: 12, K: 13, A: 14,
 };
 
+/**
+ * The order `determineFirstPlayer` walks to find the lowest card at the
+ * table: 3 is lowest and 2 highest, since a 2 is a wild reset rather than a
+ * low card. Straight from the single-player game's `determineFirstPlayer`.
+ */
+export const FIRST_PLAYER_RANK_ORDER: readonly Rank[] = [
+  "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2",
+];
+
 export type Card = {
   suit: Suit;
   rank: Rank;
