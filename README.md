@@ -5,15 +5,20 @@ Live online multiplayer version of [Shithead](https://gearoidocallaghan.com/shit
 [gearoidocallaghan.com](https://gearoidocallaghan.com).
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full project brief: architecture
-decisions, the rules to port, open questions, and milestones, and
+decisions, the rules, open questions, and milestones, and
 [`PROGRESS.md`](./PROGRESS.md) for where the build currently stands.
 
 ## Status
 
-**Milestone 1 done: rooms and presence**, live at
+**Playable**, live at
 [shithead-multiplayer.itsgearofroad.workers.dev](https://shithead-multiplayer.itsgearofroad.workers.dev).
-No game logic yet — you can create a room, share the code, and watch players
-come and go.
+Create a room, share the code or invite link, and play a full game for 2–4
+players: the swap phase, every special card, blind face-down plays, and
+ranked elimination down to the shithead. The host can remove players who've
+gone away, and start another game in the same room when one ends.
+
+The server is authoritative: it holds the deck and every hand, and each
+player only ever receives their own hand plus what's public at the table.
 
 ## Running it
 
@@ -27,14 +32,19 @@ npm run dev     # http://127.0.0.1:8787
 ```
 
 That one command serves both the client and the room server. Open the URL in
-two tabs (wrangler also accepts `--ip 0.0.0.0` if you want to reach it from a
-phone on the same wifi), create a room in one, join with the code in the other.
+two tabs — one of them private, so they're different players — create a room
+in one, and join with the code in the other. (`npx wrangler dev --ip 0.0.0.0`
+makes it reachable from a phone on the same wifi.)
 
 With the dev server running, in a second terminal:
 
 ```bash
-npm test           # presence tests against the running dev server
+npm test                   # every suite, against the running dev server
 npm run typecheck
+node test/rules.test.mjs   # just the rules — needs no server at all
+
+# the same suites against the deployment:
+PARTY_HOST=shithead-multiplayer.itsgearofroad.workers.dev npm test
 ```
 
 ## Deploying
@@ -46,34 +56,24 @@ npm run deploy         # -> shithead-multiplayer.<subdomain>.workers.dev
 
 Run `npm run types` after changing `wrangler.jsonc` to regenerate
 `worker-configuration.d.ts`, and `npx wrangler tail` to stream live logs from
-the deployed rooms.
+the deployed rooms. A deploy restarts every room, so games in progress are
+lost — rooms hold their state in memory.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `src/server.ts` | The room server. One Durable Object instance = one game room. Authoritative. |
+| `src/rules.ts` | The rules engine: a pure module, no sockets, ported from the single-player `game.js`. |
+| `src/shared/cards.ts` | Cards, the CSPRNG shuffle, and the deal. |
 | `src/shared/protocol.ts` | The client/server wire protocol, and the written source of truth for message shapes. |
-| `public/index.html` | Lobby + room markup. |
+| `public/index.html` | Lobby, room and table markup. |
 | `public/style.css` | Styling, carried over from the single-player table. |
-| `public/app.js` | Lobby/presence client. |
+| `public/app.js` | The client. Renders what the server sends; decides nothing. |
 | `public/socket.js` | Dependency-free reconnecting WebSocket wrapper for a room. |
-| `test/presence.test.mjs` | Presence tests, driven through real WebSocket clients. |
+| `test/rules.test.mjs` | The rules, deterministically — including a cross-check against the single-player `game.js`. |
+| `test/*.test.mjs` | Everything else, driven through real WebSocket clients: presence, the deal and hidden information, swapping, whole games, removing players. |
 | `wrangler.jsonc` | Worker config: the Durable Object binding, and `public/` as static assets. |
 
 The client is deliberately plain ES modules with no build step, like the
 single-player version. Only the server is TypeScript.
-
-## Notes for the next milestone
-
-- Rooms hold state in memory with `hibernate: false`, on the assumption that a
-  room lives about as long as one game. The Durable Object's storage is the
-  escape hatch if games need to outlive an eviction.
-- The server only ever sends room contents to sockets that hold a seat — never
-  a blanket `broadcast()`. Keep it that way once hands exist.
-- A seat is keyed by a client-generated player id kept in `localStorage`, so a
-  reload reclaims the same seat. In the lobby a dropped socket frees its seat
-  outright; mid-game it will be kept and marked `connected: false`.
-- Rooms are addressed as `/parties/room/<code>` — the `room` segment is the
-  Durable Object binding name from `wrangler.jsonc`, kebab-cased, not a name
-  the client picks freely.

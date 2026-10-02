@@ -162,6 +162,13 @@ async function playWholeGame(names, attempt = 1) {
     check(`${names.length}p: playing a card you don't hold is refused`, leader.last("error").code === "bad-card");
   }
 
+  {
+    const n = host.all("error").length;
+    host.send({ type: "play-again" });
+    await host.waitFor(() => host.all("error").length > n, "a play-again refusal mid-game");
+    check(`${names.length}p: play again is refused mid-game`, host.last("error").code === "wrong-phase");
+  }
+
   checkInvariants(clients);
 
   const kinds = new Set();
@@ -182,7 +189,10 @@ async function playWholeGame(names, attempt = 1) {
     }
     await Promise.all(clients.map((c, i) => c.waitFor(() => c.all("game").length > counts[i], "the move to reach everyone")));
 
-    kinds.add(host.last("game").lastEvent.kind);
+    const event = host.last("game").lastEvent;
+    kinds.add(event.kind);
+    if (event.reversed) kinds.add("(reversed)");
+    if (event.burned) kinds.add("(burned)");
     checkInvariants(clients);
     moves += 1;
   }
@@ -213,11 +223,49 @@ async function playWholeGame(names, attempt = 1) {
 
 const two = await playWholeGame(["ann", "ben"]);
 const three = await playWholeGame(["cat", "dan", "eve"]);
+const four = await playWholeGame(["fay", "gus", "hal", "ivy"]);
 
-const allKinds = new Set([...two.kinds, ...three.kinds]);
+// --- play again, after the 3-player game -----------------------------------
+{
+  const [cat, dan, eve] = three.clients;
+  const n = dan.all("error").length;
+  dan.send({ type: "play-again" });
+  await dan.waitFor(() => dan.all("error").length > n, "a not-host refusal");
+  check("play again: only the host can", dan.last("error").code === "not-host");
+
+  // Eve goes away first, so she should be dropped from the next game.
+  eve.ws.terminate();
+  await cat.waitFor(
+    () => cat.last("game").players.find((p) => p.id === "id-eve").connected === false,
+    "Eve to show as away",
+  );
+
+  const rooms = [cat, dan].map((c) => c.all("room").length);
+  cat.send({ type: "play-again" });
+  await Promise.all([cat, dan].map((c, i) => c.waitFor(() => c.all("room").length > rooms[i], "the lobby")));
+
+  const lobby = dan.last("room");
+  check("play again: everyone goes back to the room", lobby.phase === "lobby" && cat.last("room").phase === "lobby");
+  check("play again: connected players keep their seats, in order", lobby.players.map((p) => `${p.seat}:${p.id}`).join() === "0:id-cat,1:id-dan");
+  check("play again: the away player is dropped", !lobby.players.some((p) => p.id === "id-eve"));
+  check("play again: the host is still the host", lobby.hostId === "id-cat");
+
+  const eveBack = await seat(lobby.code.toLowerCase(), "eve-again", "id-eve", "eve");
+  await cat.waitFor(() => cat.last("room").players.length === 3, "Eve to rejoin the lobby");
+  check("play again: the dropped player can join the new game", cat.last("room").players.at(-1).id === "id-eve");
+
+  cat.send({ type: "start-game" });
+  await Promise.all([cat, dan, eveBack].map((c) => c.waitFor(() => c.last("game")?.phase === "swap", "a fresh deal")));
+  const fresh = cat.last("game");
+  check("play again: a fresh deal", fresh.players.every((p) => p.handCount === 3 && p.upcards.length === 3 && p.downcardCount === 3 && p.place === null && !p.removed));
+  check("play again: the table is reset", fresh.deckCount === 52 - 27 && fresh.wasteCount === 0 && fresh.burnedCount === 0 && fresh.finishOrder.length === 0 && fresh.lastEvent === null && fresh.shitheadId === null);
+  three.clients.push(eveBack);
+}
+
+const allKinds = new Set([...two.kinds, ...three.kinds, ...four.kinds]);
 console.log(`(move kinds seen: ${[...allKinds].join(", ")})`);
 
 for (const [what, detail] of problems) check(`${what}: ${detail}`, false);
 check("after every move: cards conserved, hands disjoint, no leaks, clients agree", problems.size === 0);
 
-report([...two.clients, ...three.clients]);
+report([...two.clients, ...three.clients, ...four.clients]);

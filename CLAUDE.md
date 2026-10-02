@@ -150,24 +150,33 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 1. ~~Scaffold the new repo + realtime project. A bare room that two browser
    tabs can join and see each other's presence — no game logic yet.~~
    **Done** (milestone 1).
-2. Port the deal/shuffle/state model into the room server; render each
-   client's own hand plus everyone else's public info only.
+2. ~~Port the deal/shuffle/state model into the room server; render each
+   client's own hand plus everyone else's public info only.~~ **Done**
+   (milestone 2).
 3. ~~Port `canPlayCard`/`handleSpecialCards` server-side for 2 players first;
    validate behavior against the existing single-player game as a reference.~~
    **Done** (milestone 3) — `src/rules.ts`, a pure engine, N-seat from the
    start.
-4. Extend to 3-4 players: turn order/direction, the 8-reversal rule (once
+4. ~~Extend to 3-4 players: turn order/direction, the 8-reversal rule (once
    confirmed), N-player first-player determination, win/elimination
-   condition.
-5. Room creation/join via code, reconnect handling.
+   condition.~~ **Done** — landed with milestone 3; 4-player games are in
+   `test/play.test.mjs`.
+5. ~~Room creation/join via code, reconnect handling.~~ **Done** — plus
+   the host removing away players, and "play again" in the same room.
 6. Polish: visuals, mobile layout, a link back to the main portfolio site.
+   The link back exists (page header); hosting on the portfolio domain is
+   the open question below.
 
 ## Open questions to resolve with the user (ask before/while building these parts)
 
-1. **Where does the finished multiplayer client get hosted/linked from?**
-   Standalone site under its own domain/subpath, or eventually added to the
-   main portfolio's nav/Projects section once it's stable? (Relevant at
-   milestone 6; the PartyKit deploy URL works fine until then.)
+1. **Exactly how it goes on gearoidocallaghan.com.** The user wants it on
+   the portfolio domain (2026-10-02). The options and their costs are in
+   `PROGRESS.md` ("Putting it on gearoidocallaghan.com"): a Projects card
+   linking to the `workers.dev` URL needs nothing new; a subdomain such as
+   `shithead.gearoidocallaghan.com` needs the domain's DNS moved from
+   Namecheap to Cloudflare (which also moves the `contact@` email
+   forwarding). Don't move DNS or edit the portfolio repo without the
+   user's go-ahead.
 
 ### Resolved — don't re-ask
 
@@ -181,7 +190,7 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 - **Does play continue after the first player finishes?** Yes — ranked
   elimination, last player holding cards is the shithead. See the win
   condition section above.
-- **PartyKit account** — confirmed. The user is happy to create a free
-  PartyKit account under their own login and will run `npx partykit login`
-  themselves when it's time to deploy. Local `npm run dev` needs no account,
-  so don't block on this.
+- **Hosting account** — the user's own Cloudflare account, already
+  authenticated for wrangler (`wrangler login`). Live at
+  https://shithead-multiplayer.itsgearofroad.workers.dev. (This replaced a
+  PartyKit account, which turned out to be unusable — see above.)

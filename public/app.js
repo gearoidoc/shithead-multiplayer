@@ -55,6 +55,9 @@ const el = {
   playControls: document.getElementById("play-controls"),
   playBtn: document.getElementById("play-btn"),
   pickupBtn: document.getElementById("pickup-btn"),
+  againArea: document.getElementById("again-area"),
+  againBtn: document.getElementById("again-btn"),
+  againHint: document.getElementById("again-hint"),
 };
 
 const state = {
@@ -657,7 +660,18 @@ function renderGame() {
     );
   }
 
-  el.tableNote.textContent = over ? "Leave the table to start another game." : "";
+  // Only the host can take the room back to the lobby for another game.
+  el.againArea.hidden = !over;
+  if (over) {
+    const isHost = game.hostId === game.you;
+    const host = game.players.find((p) => p.id === game.hostId);
+    el.againBtn.hidden = !isHost;
+    el.againHint.textContent = isHost
+      ? "Back to the room with everyone still here — people can join or leave before you deal again."
+      : `Waiting for ${host?.name ?? "the host"} to start another game.`;
+  }
+
+  el.tableNote.textContent = "";
 }
 
 function resultRow(place, text) {
@@ -724,6 +738,7 @@ el.startBtn.addEventListener("click", () => {
 });
 
 el.playBtn.addEventListener("click", playSelected);
+el.againBtn.addEventListener("click", () => state.socket?.send({ type: "play-again" }));
 el.pickupBtn.addEventListener("click", () => {
   state.selected.clear();
   state.socket?.send({ type: "pick-up" });

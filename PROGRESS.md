@@ -8,7 +8,9 @@ brief (rules, architecture decisions, open questions); this file holds
 **Last updated:** 2026-10-02. Milestone 3 merged (PR #2) and deployed, and
 the user played a real game through without problems. Follow-up PR #3 (the
 confirmed three-8s rule, and the host removing away players) merged and
-deployed the same day; the full suite passes against the live URL.
+deployed the same day; the full suite passes against the live URL. Then
+branch `play-again-and-tidy` (PR #4): "play again", 4-player socket tests,
+and a docs tidy-up — not yet merged or deployed.
 
 ## Where we are
 
@@ -19,9 +21,9 @@ deployed the same day; the full suite passes against the live URL.
 - **A whole game is now playable end to end**: play one or more cards of a
   rank from hand, then up-cards, then blind down-cards; pick up the pile;
   all the special cards; ranked elimination to a shithead; results screen.
-- **Tests: 217 passing** across six suites — `rules.test.mjs` (89, pure,
-  no server needed), `presence` (23), `game` (31), `swap` (29), `play` (23),
-  `remove` (22).
+- **Tests: 239 passing** across six suites — `rules.test.mjs` (89, pure,
+  no server needed), `presence` (23), `game` (31), `swap` (29), `play` (45,
+  or 44 when a conditional check doesn't apply), `remove` (22).
 - **The user played a real game on the live site (2026-10-02) and it went
   perfectly.** Browser automation still isn't available to Claude (the
   Claude in Chrome extension isn't connected), so UI changes since then —
@@ -48,9 +50,9 @@ room in one, join from the other, and play a game through.
 | 1 | Scaffold + a room two tabs can join | **done**, deployed |
 | 2 | Deal/shuffle in the room server; per-player views | **done**, deployed |
 | 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, deployed |
-| 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | **mostly done** with 3, see below |
-| 5 | Room join by code, reconnect handling | partly done, see below |
-| 6 | Polish: visuals, mobile, link back to the portfolio | not started |
+| 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | **done** (PR #4 adds 4-player socket games) |
+| 5 | Room join by code, reconnect handling | **done**, plus host removal and play again |
+| 6 | Polish: visuals, mobile, link back to the portfolio | link back done; the rest not started |
 
 Milestone 2 in full: shuffle and deal (`src/shared/cards.ts`), per-seat game
 state, the per-player view protocol, a host-only start moving `lobby` ->
@@ -69,8 +71,7 @@ would have meant rewriting it: turn order walks `turnDirection` and closes
 over finished seats, the single-8 reversal and double-8 go-again are in
 (CLAUDE.md's worked example is a test), and ranked elimination runs to a
 shithead. `play.test.mjs` plays full 2- and 3-player games over sockets.
-What milestone 4 still lacks: a 4-player socket game in the tests (the
-rules suite covers 4 seats).
+`play.test.mjs` now plays whole 2-, 3- and 4-player games (PR #4).
 
 **Removing away players** (confirmed by the user 2026-10-02 as the answer
 to "what if someone never comes back"): once the game is dealt, the host
@@ -79,8 +80,9 @@ gets a Remove button on any player shown as away. See the decisions below.
 Milestone 5 came largely free: room codes, `#CODE` invite links, a
 `localStorage` player id that reclaims a seat, a reconnecting socket with
 backoff, and — as of milestone 2 — mid-game reconnect, which returns the
-player to their seat with the same hand and is covered by a test. What's left
-there is deciding what happens when a player never comes back.
+player to their seat with the same hand and is covered by a test. A player
+who never comes back can be removed by the host (PR #3), and when a game
+ends the host can take the room back to the lobby to play again (PR #4).
 
 ## How to run it
 
@@ -195,6 +197,55 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
   `play.test.mjs` re-deals a stalled bot game instead. Raise with the user
   if it ever shows up in real play.
 
+- **2026-10-02 — "play again" goes back to the lobby rather than dealing
+  straight away.** Connected players keep their seats in the same order;
+  anyone away or removed is dropped (and may rejoin as a newcomer, since
+  it's a new game). One extra click for the host, but it's the only point
+  where people can leave or join. Host only, once the game is `finished`.
+
+## Putting it on gearoidocallaghan.com
+
+The user asked how (2026-10-02); not decided or done yet. Facts as checked
+that day: the domain's DNS is at **Namecheap** (BasicDNS,
+`dns1/dns2.registrar-servers.com`); the site is **GitHub Pages** (four A
+records `185.199.108-111.153`, `www` CNAME to `gearoidoc.github.io`); and
+`contact@` mail uses **Namecheap email forwarding** (MX
+`eforward1-5.registrar-servers.com`, SPF
+`include:spf.efwd.registrar-servers.com`). The client derives its server
+from `location.host`, so it works on any host with no code change.
+
+1. **Link it from the portfolio (no infrastructure).** Add a Projects card
+   and footer link in `gearoidoc.github.io/index.html` pointing at the
+   `workers.dev` URL, like the existing Shithead card. Lives on the
+   portfolio, not *at* the domain.
+2. **A subdomain, e.g. `shithead.gearoidocallaghan.com` (recommended for a
+   branded URL).** A Worker custom domain needs the domain's DNS on
+   Cloudflare, and a CNAME from Namecheap to `workers.dev` doesn't work
+   (workers.dev won't serve a foreign hostname). So:
+   1. Cloudflare dashboard → *Add a domain* → `gearoidocallaghan.com`,
+      Free plan. Check the imported records: the four GitHub Pages A
+      records and the `www` CNAME, all **DNS only (grey cloud)** so GitHub
+      Pages keeps serving and renewing its own certificate.
+   2. **Email:** Namecheap's forwarding only works while Namecheap hosts
+      the DNS. Set up Cloudflare *Email Routing* (free) to forward
+      `contact@` to the same inbox; it replaces the MX/SPF records — remove
+      the imported `eforward` MX records and the old SPF. Test it after
+      the switch.
+   3. Namecheap → Domain List → Manage → Nameservers → *Custom DNS* → the
+      two nameservers Cloudflare gives. Takes minutes to a few hours;
+      Cloudflare emails when the zone is active.
+   4. Then in this repo, `wrangler.jsonc`:
+      `"routes": [{ "pattern": "shithead.gearoidocallaghan.com", "custom_domain": true }]`,
+      and `npm run deploy`. Wrangler creates the DNS record and
+      certificate. The `workers.dev` URL keeps working unless
+      `"workers_dev": false` is set.
+   5. Point the portfolio's links at the new URL.
+3. **A subpath, e.g. `gearoidocallaghan.com/multiplayer/` — not
+   recommended.** GitHub Pages serves the whole apex, so this needs the
+   entire site proxied through Cloudflare plus a Worker route that strips
+   the prefix — and the client and room URLs (`/parties/room/...`) are
+   root-absolute, so it would also need code changes.
+
 ## Landmines
 
 - **Never use a blanket `broadcast()`.** It reaches sockets that haven't
@@ -257,10 +308,11 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 
 ## Next step, concretely
 
-1. The user to try the host's Remove button in a browser (close a tab
-   mid-game, remove that player from another).
-2. Finish milestone 4: a 4-player game in `play.test.mjs`.
-3. A "play again" in the same room — today you leave and make a new room.
+1. Merge PR #4, `npm run deploy`, run the suite against the deployment.
+2. The user to try Remove and Play again in a browser, and a game on a
+   real phone (mobile layout has never been checked on a device).
+3. The user to choose how it goes on gearoidocallaghan.com (section
+   above), then do it.
 4. Milestone 6 polish.
 
 Remaining open question from the brief, only relevant at milestone 6: where

@@ -650,6 +650,14 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
   color: var(--gold);
 }
 
+.again-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
 .play-controls {
   display: flex;
   gap: 10px;
