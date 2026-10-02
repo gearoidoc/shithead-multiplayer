@@ -97,6 +97,13 @@ export type PickUpMessage = { type: "pick-up" };
  */
 export type RemovePlayerMessage = { type: "remove-player"; playerId: string };
 
+/**
+ * Host only, once the game is over: take the room back to its lobby for
+ * another game. Everyone still connected keeps their seat, in the same
+ * order; anyone away or removed is dropped, and newcomers can join again.
+ */
+export type PlayAgainMessage = { type: "play-again" };
+
 export type ClientMessage =
   | JoinMessage
   | LeaveMessage
@@ -106,7 +113,8 @@ export type ClientMessage =
   | PlayMessage
   | PlayBlindMessage
   | PickUpMessage
-  | RemovePlayerMessage;
+  | RemovePlayerMessage
+  | PlayAgainMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client

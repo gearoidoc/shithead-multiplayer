@@ -122,6 +122,8 @@ export class Room extends Server<Env> {
         return this.handleMove(conn, { kind: "pick-up" });
       case "remove-player":
         return this.handleRemovePlayer(conn, msg.playerId);
+      case "play-again":
+        return this.handlePlayAgain(conn);
       default:
         return this.sendError(conn, "bad-message", "Unknown message type.");
     }
@@ -208,7 +210,7 @@ export class Room extends Server<Env> {
    * Deliberate exit. In the lobby the seat is given up and the rest
    * renumbered; mid-game it can't be, because renumbering would shuffle a
    * live table's seating, so it degrades to the same handling as a dropped
-   * socket. Abandoning a running game properly is milestone 5's problem.
+   * socket — and the host can remove the seat once it's shown as away.
    */
   private handleLeave(conn: Connection) {
     const playerId = this.connectionToPlayer.get(conn.id);
@@ -381,6 +383,41 @@ export class Room extends Server<Env> {
       this.phase = "finished";
       this.table.currentPlayerId = null;
     }
+
+    this.broadcastState();
+  }
+
+  /**
+   * Host only, once the game is over: back to the lobby for another game.
+   * Connected players keep their seats in the same order; anyone away or
+   * removed is dropped, as a dropped socket would be in the lobby. Going via
+   * the lobby, rather than dealing straight away, lets people leave or join
+   * between games.
+   */
+  private handlePlayAgain(conn: Connection) {
+    const seat = this.seatFor(conn);
+    if (!seat) return;
+
+    if (this.phase !== "finished") {
+      return this.sendError(conn, "wrong-phase", "The game isn't over yet.");
+    }
+    if (seat.id !== this.hostId()) {
+      return this.sendError(conn, "not-host", "Only the host can start another game.");
+    }
+
+    this.seats = this.seats.filter(
+      (s) => s.connected && !this.table.removed.includes(s.id),
+    );
+    this.renumberSeats();
+    for (const s of this.seats) {
+      s.hand = [];
+      s.upcards = [];
+      s.downcards = [];
+      s.ready = false;
+    }
+    this.table = emptyTable();
+    this.lastEvent = null;
+    this.phase = "lobby";
 
     this.broadcastState();
   }
