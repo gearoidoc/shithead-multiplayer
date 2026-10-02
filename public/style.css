@@ -7,6 +7,9 @@
   box-sizing: border-box;
 }
 
+/* `hidden` must win over any `display` set below (e.g. the flex screens). */
+[hidden] { display: none !important; }
+
 :root {
   --green: #1a5c2a;
   --gold: #FFD700;
@@ -581,6 +584,71 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
   --card-h: 60px;
   font-size: 0.8rem;
 }
+
+/* Your own cards that won't go on the pile: still pickable, just quieter. */
+.card.unplayable { opacity: 0.55; }
+.card.unplayable.selected { opacity: 1; }
+
+.opponent.is-turn { border-top-color: var(--gold); }
+
+.seat-badge.place {
+  background-color: rgba(255, 255, 255, 0.2);
+  font-weight: bold;
+}
+
+.seat-badge.shithead {
+  background-color: #8d5524;
+  color: #fff;
+  font-weight: bold;
+}
+
+/* The top few cards of the pile, fanned so a run of one rank shows. */
+.pile-slot.waste {
+  width: auto;
+  min-width: var(--card-w);
+}
+
+.pile-slot.waste .card + .card {
+  margin-left: calc(var(--card-w) * -0.62);
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.25);
+}
+
+.event-line {
+  min-height: 1.4em;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--gold);
+}
+
+.results {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background-color: var(--panel-strong);
+  border-radius: 12px;
+}
+
+.results li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.result-place {
+  min-width: 2.6em;
+  font-weight: bold;
+  color: var(--gold);
+}
+
+.play-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.play-controls button { flex: 1 1 140px; }
 
 .room-footer {
   display: flex;

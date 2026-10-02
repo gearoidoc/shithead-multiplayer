@@ -85,10 +85,13 @@
           <span class="pile-label">Draw</span>
         </div>
         <div class="pile">
-          <div id="waste-pile" class="pile-slot"></div>
-          <span class="pile-label">Pile</span>
+          <div id="waste-pile" class="pile-slot waste"></div>
+          <span id="waste-label" class="pile-label">Pile</span>
         </div>
       </div>
+
+      <p id="event-line" class="event-line" aria-live="polite"></p>
+      <ol id="results" class="results" hidden></ol>
 
       <div id="own-area">
         <h3 class="own-heading">
@@ -96,6 +99,10 @@
           <button id="ready-btn" type="button" class="secondary" hidden>I'm done swapping</button>
         </h3>
         <p id="swap-hint" class="blurb"></p>
+        <div id="play-controls" class="play-controls" hidden>
+          <button id="play-btn" type="button">Play</button>
+          <button id="pickup-btn" type="button" class="secondary">Pick up the pile</button>
+        </div>
         <div class="own-row">
           <span class="row-label">Face up</span>
           <div id="own-upcards" class="card-row"></div>

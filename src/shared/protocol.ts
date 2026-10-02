@@ -7,6 +7,9 @@
  */
 
 import type { Card } from "./cards";
+import type { CardId, TableEvent } from "../rules";
+
+export type { CardId, TableEvent };
 
 export const MAX_PLAYERS = 4;
 export const MIN_PLAYERS = 2;
@@ -25,7 +28,10 @@ export type PublicPlayer = {
   connected: boolean;
 };
 
-/** Phases the room moves through. `playing` and `finished` are not wired up yet. */
+/**
+ * Phases the room moves through. `finished` once only one player is left
+ * holding cards.
+ */
 export type RoomPhase = "lobby" | "swap" | "playing" | "finished";
 
 // ---------------------------------------------------------------------------
@@ -62,12 +68,37 @@ export type SwapMessage = {
  */
 export type ReadyMessage = { type: "ready"; ready: boolean };
 
+/**
+ * On your turn, play one or more cards of the same rank from your hand —
+ * or, once that's empty, from your face-up cards. Cards are named by
+ * identity rather than index, so a stale client view can't play the wrong
+ * card: the server checks you actually hold each one, in that zone.
+ */
+export type PlayMessage = {
+  type: "play";
+  source: "hand" | "upcards";
+  cards: CardId[];
+};
+
+/**
+ * Once your hand and face-up cards are gone, turn over one face-down card
+ * by position. Nobody, including you, knows what it is until it's played;
+ * if it can't go, you take the pile and the card.
+ */
+export type PlayBlindMessage = { type: "play-blind"; index: number };
+
+/** On your turn, take the whole pile into your hand instead of playing. */
+export type PickUpMessage = { type: "pick-up" };
+
 export type ClientMessage =
   | JoinMessage
   | LeaveMessage
   | StartGameMessage
   | SwapMessage
-  | ReadyMessage;
+  | ReadyMessage
+  | PlayMessage
+  | PlayBlindMessage
+  | PickUpMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client
@@ -111,6 +142,8 @@ export type SeatView = {
   downcardCount: number;
   /** Done swapping. Meaningless outside the swap phase. */
   ready: boolean;
+  /** 1-based finishing position once out of cards; null while still in. */
+  place: number | null;
 };
 
 /**
@@ -130,12 +163,23 @@ export type GameStateMessage = {
   hostId: string | null;
   deckCount: number;
   wasteTop: Card | null;
+  /**
+   * Up to the top four cards of the pile, oldest first. Public at a real
+   * table, and needed to see a four-of-a-kind building across turns.
+   */
+  wasteRecent: Card[];
   wasteCount: number;
   burnedCount: number;
   /** Whose turn it is. Null until the swap phase ends. */
   currentPlayerId: string | null;
   /** 1 plays up through the seats, -1 plays down. Reversed by a single 8. */
   turnDirection: 1 | -1;
+  /** What the last move did, for everyone to see. Null before the first. */
+  lastEvent: TableEvent | null;
+  /** Player ids in the order they went out: index 0 finished 1st. */
+  finishOrder: string[];
+  /** The last player holding cards, once the game is over. */
+  shitheadId: string | null;
 };
 
 export type ErrorCode =
@@ -147,7 +191,11 @@ export type ErrorCode =
   | "not-enough-players"
   | "already-started"
   | "wrong-phase"
-  | "bad-card";
+  | "bad-card"
+  | "not-your-turn"
+  | "wrong-source"
+  | "illegal-play"
+  | "nothing-to-pick-up";
 
 export type ErrorMessage = {
   type: "error";
