@@ -5,16 +5,17 @@ without re-deriving anything. [`CLAUDE.md`](./CLAUDE.md) holds the stable
 brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
-**Last updated:** 2026-10-02. Milestone 3 done locally — **not committed,
-not deployed**. Most of milestone 4 came with it.
+**Last updated:** 2026-10-02. Milestone 3 done, on branch `milestone-3-play`,
+**PR #2 open, not merged or deployed**. Most of milestone 4 came with it.
 
 ## Where we are
 
 - **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev — still
   **milestone 2** (deal + swap, nothing playable). `npm run deploy` pushes
   the milestone 3 work once it's committed.
-- `main` has milestones 1-2 (PR #1 merged). The milestone 3 work is
-  uncommitted in the working tree on `main` — branch before committing.
+- `main` has milestones 1-2 (PR #1 merged). Milestone 3 is on
+  `milestone-3-play`, pushed, in
+  [PR #2](https://github.com/gearoidoc/shithead-multiplayer/pull/2).
 - **A whole game is now playable end to end**: play one or more cards of a
   rank from hand, then up-cards, then blind down-cards; pick up the pile;
   all the special cards; ranked elimination to a shithead; results screen.
@@ -46,7 +47,7 @@ room in one, join from the other, and play a game through.
 | --- | --- | --- |
 | 1 | Scaffold + a room two tabs can join | **done**, deployed |
 | 2 | Deal/shuffle in the room server; per-player views | **done**, deployed |
-| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, not committed or deployed |
+| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, PR #2 open, not deployed |
 | 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | **mostly done** with 3, see below |
 | 5 | Room join by code, reconnect handling | partly done, see below |
 | 6 | Polish: visuals, mobile, link back to the portfolio | not started |
@@ -239,8 +240,7 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 1. **Play a game in two browser tabs** and fix whatever the UI gets wrong —
    it has never been looked at. Then try three tabs, and a phone-width
    window.
-2. Commit on a branch (`milestone-3-play`), open a PR, merge, `npm run
-   deploy`, and run the suite against the deployment
+2. Merge PR #2, `npm run deploy`, and run the suite against the deployment
    (`PARTY_HOST=shithead-multiplayer.itsgearofroad.workers.dev npm test`).
 3. Finish milestone 4: a 4-player game in `play.test.mjs`; confirm the
    three-8s assumption with the user.
