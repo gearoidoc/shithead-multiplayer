@@ -169,8 +169,9 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 
 ## Open questions to resolve with the user (ask before/while building these parts)
 
-1. **Exactly how it goes on gearoidocallaghan.com.** The user wants it on
-   the portfolio domain (2026-10-02). The options and their costs are in
+1. **Whether to move to a subdomain later.** For now (decided 2026-10-02)
+   the portfolio links to the `workers.dev` URL from its Projects section
+   and footer. The options and their costs are in
    `PROGRESS.md` ("Putting it on gearoidocallaghan.com"): a Projects card
    linking to the `workers.dev` URL needs nothing new; a subdomain such as
    `shithead.gearoidocallaghan.com` needs the domain's DNS moved from

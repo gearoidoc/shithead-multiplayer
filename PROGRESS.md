@@ -8,16 +8,17 @@ brief (rules, architecture decisions, open questions); this file holds
 **Last updated:** 2026-10-02. Milestone 3 merged (PR #2) and deployed, and
 the user played a real game through without problems. Follow-up PR #3 (the
 confirmed three-8s rule, and the host removing away players) merged and
-deployed the same day; the full suite passes against the live URL. Then
-branch `play-again-and-tidy` (PR #4): "play again", 4-player socket tests,
-and a docs tidy-up — not yet merged or deployed.
+deployed the same day; the full suite passes against the live URL. Then PR #4
+("play again", 4-player socket tests, docs tidy-up), merged and deployed
+too. Hosting: the user chose **option 1** (link from the portfolio) for
+now — portfolio PR gearoidoc/gearoidoc.github.io#5, open, not merged.
 
 ## Where we are
 
 - **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev —
-  milestone 3 plus PR #3 (deployed 2026-10-02, version `e85c66dc`). The
+  everything through PR #4 (deployed 2026-10-02, version `033f7540`). The
   full suite passes against it.
-- `main` has everything (PRs #1-#3 merged).
+- `main` has everything (PRs #1-#4 merged).
 - **A whole game is now playable end to end**: play one or more cards of a
   rank from hand, then up-cards, then blind down-cards; pick up the pile;
   all the special cards; ranked elimination to a shithead; results screen.
@@ -205,7 +206,10 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 
 ## Putting it on gearoidocallaghan.com
 
-The user asked how (2026-10-02); not decided or done yet. Facts as checked
+**Decided 2026-10-02: option 1 for now** — a Projects card and footer
+link on the portfolio, in gearoidoc/gearoidoc.github.io PR #5 (open; merging
+it deploys the portfolio). Option 2 remains the path to a branded URL; if
+taken, only those two links in the portfolio need changing. Facts as checked
 that day: the domain's DNS is at **Namecheap** (BasicDNS,
 `dns1/dns2.registrar-servers.com`); the site is **GitHub Pages** (four A
 records `185.199.108-111.153`, `www` CNAME to `gearoidoc.github.io`); and
@@ -308,12 +312,11 @@ from `location.host`, so it works on any host with no code change.
 
 ## Next step, concretely
 
-1. Merge PR #4, `npm run deploy`, run the suite against the deployment.
+1. The user to merge portfolio PR #5 (gearoidoc/gearoidoc.github.io).
 2. The user to try Remove and Play again in a browser, and a game on a
    real phone (mobile layout has never been checked on a device).
-3. The user to choose how it goes on gearoidocallaghan.com (section
-   above), then do it.
-4. Milestone 6 polish.
+3. Milestone 6 polish.
+4. Later, optionally: option 2 (a subdomain) from the section above.
 
 Remaining open question from the brief, only relevant at milestone 6: where
 the client gets linked from (standalone vs. the portfolio's Projects nav).
