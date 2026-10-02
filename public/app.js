@@ -1,7 +1,8 @@
 /**
- * Lobby + presence client. Milestone 1: no game logic anywhere near here —
- * the room server owns all of that. This screen exists to create/join a room
- * by code and show who else is in it.
+ * The browser client: lobby, room, and the table. No game logic is
+ * authoritative here — the room server owns all of that. The one rule this
+ * file knows, `canPlay`, only decides which cards to highlight; the server
+ * checks every move regardless.
  *
  * Message shapes are documented in src/shared/protocol.ts.
  */
@@ -48,6 +49,12 @@ const el = {
   ownHand: document.getElementById("own-hand"),
   readyBtn: document.getElementById("ready-btn"),
   swapHint: document.getElementById("swap-hint"),
+  wasteLabel: document.getElementById("waste-label"),
+  eventLine: document.getElementById("event-line"),
+  results: document.getElementById("results"),
+  playControls: document.getElementById("play-controls"),
+  playBtn: document.getElementById("play-btn"),
+  pickupBtn: document.getElementById("pickup-btn"),
 };
 
 const state = {
@@ -58,6 +65,8 @@ const state = {
   /** The table from our point of view, from a `game` message. */ game: null,
   /** Hand card picked for a swap, awaiting an up-card. Index, or null. */
   selectedHandIndex: null,
+  /** Cards picked to play this turn, by key ("10♥"). All one rank. */
+  selected: new Set(),
   status: "connecting",
 };
 
@@ -169,6 +178,7 @@ function handleServerMessage(msg) {
       state.game = msg;
       // Indices are only meaningful against the state they were read from.
       if (msg.phase !== "swap") state.selectedHandIndex = null;
+      pruneSelection();
       showScreen("table");
       renderGame();
       break;
@@ -302,6 +312,81 @@ function renderRoom() {
   }
 }
 
+const cardKey = (card) => `${card.rank}${card.suit}`;
+
+/**
+ * Display only: which cards to highlight as playable. The same rule as
+ * `canPlayCard` in src/rules.ts — but the server re-checks every move, so
+ * getting this wrong costs a refused move, never a cheat.
+ */
+function canPlay(card, top) {
+  if (!top) return true;
+  if (card.rank === "2" || card.rank === "8" || card.rank === "10") return true;
+  if (top.rank === "7") return card.value <= 7 || ["2", "7", "8", "10"].includes(card.rank);
+  if (card.rank === "7") return top.value <= 7;
+  if (top.rank === "2") return true;
+  return card.value >= top.value;
+}
+
+/** The zone this player must play from: hand, then up-cards, then blind. */
+function activeSource(game, me) {
+  if (game.hand.length > 0) return "hand";
+  if ((me?.upcards.length ?? 0) > 0) return "upcards";
+  if ((me?.downcardCount ?? 0) > 0) return "downcards";
+  return null;
+}
+
+function isMyTurn(game) {
+  return game.phase === "playing" && game.currentPlayerId === game.you;
+}
+
+/** Drop selected cards we no longer hold in the zone we play from. */
+function pruneSelection() {
+  const game = state.game;
+  if (!game || !isMyTurn(game)) return state.selected.clear();
+  const me = game.players.find((p) => p.id === game.you);
+  const source = activeSource(game, me);
+  const pool = source === "hand" ? game.hand : source === "upcards" ? me.upcards : [];
+  const held = new Set(pool.map(cardKey));
+  for (const key of state.selected) if (!held.has(key)) state.selected.delete(key);
+}
+
+const ORDINALS = ["1st", "2nd", "3rd", "4th"];
+
+/** One line on what the last move did, for everyone at the table. */
+function describeEvent(game) {
+  const event = game.lastEvent;
+  if (!event) return "";
+  const who = event.playerId === game.you
+    ? "You"
+    : game.players.find((p) => p.id === event.playerId)?.name ?? "Someone";
+  const cards = event.cards.map(cardKey).join(" ");
+
+  let text;
+  switch (event.kind) {
+    case "play":
+      text = `${who} played ${cards}`;
+      break;
+    case "blind-play":
+      text = `${who} turned over ${cards} — and it goes`;
+      break;
+    case "blind-fail":
+      text = `${who} turned over ${cards} — no good, picked up ${event.pickedUp}`;
+      break;
+    case "pick-up":
+      text = `${who} picked up the pile (${event.pickedUp})`;
+      break;
+  }
+  if (event.burned) text += " — burned the pile!";
+  if (event.reversed) text += " — direction reversed";
+  if (event.place) {
+    text += ` — ${who === "You" ? "you're" : `${who} is`} out in ${ORDINALS[event.place - 1]}`;
+  } else if (event.goAgain) {
+    text += ` — ${who === "You" ? "go" : "goes"} again`;
+  }
+  return text + ".";
+}
+
 const PHASE_TEXT = {
   swap: "Swap phase",
   playing: "In play",
@@ -350,6 +435,7 @@ function renderGame() {
     ...others.map((player) => {
       const box = document.createElement("div");
       box.className = "opponent" + (player.connected ? "" : " is-away");
+      if (player.id === game.currentPlayerId) box.classList.add("is-turn");
 
       const head = document.createElement("div");
       head.className = "opponent-head";
@@ -360,6 +446,8 @@ function renderGame() {
       head.append(name);
 
       if (player.id === game.currentPlayerId) head.append(badge("their turn", "turn"));
+      if (player.place) head.append(badge(ORDINALS[player.place - 1], "place"));
+      if (player.id === game.shitheadId) head.append(badge("shithead", "shithead"));
       if (game.phase === "swap" && player.ready) head.append(badge("ready", "ready"));
       if (!player.connected) head.append(badge("away", "away"));
 
@@ -388,39 +476,65 @@ function renderGame() {
   }
   el.drawPile.title = `${game.deckCount} cards left in the draw pile`;
 
-  if (game.wasteTop) {
-    el.wastePile.replaceChildren(cardEl(game.wasteTop));
+  // The top few cards, fanned, so a four-of-a-kind building is visible.
+  if (game.wasteRecent.length > 0) {
+    el.wastePile.replaceChildren(...game.wasteRecent.map((card) => cardEl(card)));
   } else {
-    el.wastePile.textContent = "empty";
+    el.wastePile.textContent = game.burnedCount > 0 ? "burned" : "empty";
   }
   el.wastePile.title = `${game.wasteCount} cards in the pile`;
+  el.wasteLabel.textContent = game.wasteCount > 0 ? `Pile (${game.wasteCount})` : "Pile";
+
+  el.eventLine.textContent = describeEvent(game);
 
   // --- us: hand in full, our own down-cards still face down --------------
   el.ownName.textContent = me ? `${me.name} (you)` : "You";
 
   const swapping = game.phase === "swap";
   const selected = state.selectedHandIndex;
+  const myTurn = isMyTurn(game);
+  const source = activeSource(game, me);
 
-  // During the swap phase: pick a hand card, then the up-card to trade it for.
-  fillRow(
-    el.ownHand,
-    game.hand.map((card, index) => {
-      const div = cardEl(card);
-      if (!swapping) return div;
+  /** A card in the zone we play from: tap to pick it (one rank at a time). */
+  const playable = (card) => {
+    const div = cardEl(card);
+    if (!canPlay(card, game.wasteTop)) div.classList.add("unplayable");
+    div.classList.add("clickable");
+    if (state.selected.has(cardKey(card))) div.classList.add("selected");
+    div.addEventListener("click", () => toggleSelected(card));
+    return div;
+  };
 
-      div.classList.add("clickable");
-      if (index === selected) div.classList.add("selected");
-      div.addEventListener("click", () => {
-        state.selectedHandIndex = selected === index ? null : index;
-        renderGame();
-      });
-      return div;
-    }),
-  );
+  if (swapping) {
+    // Pick a hand card, then the up-card to trade it for. Indices, so the
+    // hand is shown in the server's order.
+    fillRow(
+      el.ownHand,
+      game.hand.map((card, index) => {
+        const div = cardEl(card);
+        div.classList.add("clickable");
+        if (index === selected) div.classList.add("selected");
+        div.addEventListener("click", () => {
+          state.selectedHandIndex = selected === index ? null : index;
+          renderGame();
+        });
+        return div;
+      }),
+    );
+  } else {
+    // In play, cards are sent by identity, so the hand can be sorted.
+    const sorted = [...game.hand].sort((a, b) => a.value - b.value);
+    fillRow(
+      el.ownHand,
+      sorted.map((card) => (myTurn && source === "hand" ? playable(card) : cardEl(card))),
+    );
+  }
 
   fillRow(
     el.ownUpcards,
     (me?.upcards ?? []).map((card, index) => {
+      if (myTurn && source === "upcards") return playable(card);
+
       const div = cardEl(card);
       if (!swapping || selected === null) return div;
 
@@ -437,7 +551,32 @@ function renderGame() {
     }),
   );
 
-  fillRow(el.ownDowncards, cardBacks(me?.downcardCount ?? 0));
+  // Face-down cards, played blind: one tap turns one over.
+  fillRow(
+    el.ownDowncards,
+    cardBacks(me?.downcardCount ?? 0).map((div, index) => {
+      if (!myTurn || source !== "downcards") return div;
+      div.classList.add("clickable");
+      div.title = "Turn this one over";
+      div.addEventListener("click", () => state.socket?.send({ type: "play-blind", index }));
+      return div;
+    }),
+  );
+
+  if (me?.place) {
+    el.ownName.textContent += ` — out in ${ORDINALS[me.place - 1]}`;
+  } else if (me && me.id === game.shitheadId) {
+    el.ownName.textContent += " — shithead!";
+  }
+
+  // --- play controls ------------------------------------------------------
+  el.playControls.hidden = !myTurn;
+  if (myTurn) {
+    el.playBtn.hidden = source === "downcards";
+    el.playBtn.disabled = state.selected.size === 0;
+    el.playBtn.textContent = state.selected.size > 1 ? `Play ${state.selected.size}` : "Play";
+    el.pickupBtn.disabled = game.wasteCount === 0;
+  }
 
   // --- swap controls ------------------------------------------------------
   el.readyBtn.hidden = !swapping;
@@ -453,6 +592,11 @@ function renderGame() {
       : selected === null
         ? "Swap any hand card for one of your face-up cards: pick a hand card first."
         : "Now pick the face-up card to trade it for.";
+  } else if (myTurn) {
+    el.swapHint.textContent =
+      source === "downcards"
+        ? "Down to your face-down cards: tap one to turn it over."
+        : `Pick one or more cards of the same rank${source === "upcards" ? " from your face-up cards" : ""}, then play — or pick up the pile.`;
   } else {
     el.swapHint.textContent = "";
   }
@@ -465,12 +609,61 @@ function renderGame() {
         ? "Your turn"
         : `${current.name}'s turn`
       : "In play";
+    // Direction only means anything with three or more at the table.
+    if (game.players.length > 2) {
+      el.tablePhase.textContent += game.turnDirection === 1 ? " · play order ↻" : " · reversed ↺";
+    }
   }
 
-  el.tableNote.textContent =
-    game.phase === "playing"
-      ? "Play itself is the next milestone — the lead has been worked out, but no card can be played yet."
-      : "";
+  // --- the end ------------------------------------------------------------
+  const over = game.phase === "finished";
+  el.results.hidden = !over;
+  if (over) {
+    const nameOf = (id) => {
+      const name = game.players.find((p) => p.id === id)?.name ?? "?";
+      return id === game.you ? `${name} (you)` : name;
+    };
+    el.results.replaceChildren(
+      ...game.finishOrder.map((id, i) => resultRow(ORDINALS[i], nameOf(id))),
+      ...(game.shitheadId ? [resultRow("💩", `${nameOf(game.shitheadId)} — the shithead`)] : []),
+    );
+  }
+
+  el.tableNote.textContent = over ? "Leave the table to start another game." : "";
+}
+
+function resultRow(place, text) {
+  const li = document.createElement("li");
+  const badgeEl = document.createElement("span");
+  badgeEl.className = "result-place";
+  badgeEl.textContent = place;
+  li.append(badgeEl, text);
+  return li;
+}
+
+/** Pick or unpick a card to play. Picking a different rank starts over. */
+function toggleSelected(card) {
+  const key = cardKey(card);
+  if (state.selected.has(key)) {
+    state.selected.delete(key);
+  } else {
+    const [first] = state.selected;
+    if (first && first.slice(0, -1) !== card.rank) state.selected.clear();
+    state.selected.add(key);
+  }
+  renderGame();
+}
+
+function playSelected() {
+  const game = state.game;
+  if (!game || state.selected.size === 0) return;
+  const me = game.players.find((p) => p.id === game.you);
+  const source = activeSource(game, me);
+  if (source !== "hand" && source !== "upcards") return;
+
+  const cards = [...state.selected].map((key) => ({ rank: key.slice(0, -1), suit: key.slice(-1) }));
+  state.socket?.send({ type: "play", source, cards });
+  state.selected.clear();
 }
 
 function badge(text, variant) {
@@ -500,6 +693,12 @@ el.tableLeaveBtn.addEventListener("click", () => leaveRoom());
 
 el.startBtn.addEventListener("click", () => {
   state.socket?.send({ type: "start-game" });
+});
+
+el.playBtn.addEventListener("click", playSelected);
+el.pickupBtn.addEventListener("click", () => {
+  state.selected.clear();
+  state.socket?.send({ type: "pick-up" });
 });
 
 el.readyBtn.addEventListener("click", () => {

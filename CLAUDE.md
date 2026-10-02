@@ -147,8 +147,10 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
    **Done** (milestone 1).
 2. Port the deal/shuffle/state model into the room server; render each
    client's own hand plus everyone else's public info only.
-3. Port `canPlayCard`/`handleSpecialCards` server-side for 2 players first;
-   validate behavior against the existing single-player game as a reference.
+3. ~~Port `canPlayCard`/`handleSpecialCards` server-side for 2 players first;
+   validate behavior against the existing single-player game as a reference.~~
+   **Done** (milestone 3) — `src/rules.ts`, a pure engine, N-seat from the
+   start.
 4. Extend to 3-4 players: turn order/direction, the 8-reversal rule (once
    confirmed), N-player first-player determination, win/elimination
    condition.

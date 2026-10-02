@@ -5,25 +5,26 @@ without re-deriving anything. [`CLAUDE.md`](./CLAUDE.md) holds the stable
 brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
-**Last updated:** 2026-09-30, end of session. Milestones 1-2 done and on
-`main`; milestone 3 not started.
+**Last updated:** 2026-10-02. Milestone 3 done locally — **not committed,
+not deployed**. Most of milestone 4 came with it.
 
 ## Where we are
 
-**Milestone 1 done, deployed, verified live. Milestone 2 mostly done, not yet
-deployed.**
-
-- **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev
-  — this is still **milestone 1** (lobby only). Milestone 2 is committed but
-  not deployed; run `npm run deploy` to push it live.
-- Branch `milestone-1-rooms-and-presence`, pushed to
-  `gearoidoc/shithead-multiplayer`. **Not merged to `main`**, and there's no
-  PR open yet.
-- A game can now be dealt. The host starts, everyone gets their own hand plus
-  public information about everyone else, and the table renders. Nothing is
-  clickable yet — no card can be played, and cards can't be swapped.
-- **Tests: 52 passing** — 21 presence (`test/presence.test.mjs`), 31 deal and
-  hidden-information (`test/game.test.mjs`).
+- **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev — still
+  **milestone 2** (deal + swap, nothing playable). `npm run deploy` pushes
+  the milestone 3 work once it's committed.
+- `main` has milestones 1-2 (PR #1 merged). The milestone 3 work is
+  uncommitted in the working tree on `main` — branch before committing.
+- **A whole game is now playable end to end**: play one or more cards of a
+  rank from hand, then up-cards, then blind down-cards; pick up the pile;
+  all the special cards; ranked elimination to a shithead; results screen.
+- **Tests: 181 passing** across five suites — `rules.test.mjs` (75, pure,
+  no server needed), `presence` (23), `game` (31), `swap` (29), `play` (23).
+- **Still nobody has watched the UI in a browser.** No browser automation
+  was available again (the Claude in Chrome extension isn't connected; only
+  Firefox is installed, without a driver). The server and protocol are
+  thoroughly tested; `public/app.js` is not. Playing a game in two tabs is
+  the first thing to do next session.
 
 ## Picking this up again
 
@@ -33,16 +34,11 @@ nvm use            # Node 24; the system default is 18 and wrangler refuses it
 npm install        # only if node_modules is missing
 npm run dev        # http://127.0.0.1:8787
 npm test           # in a second terminal, also after nvm use
+node test/rules.test.mjs   # the rules alone — no dev server needed
 ```
 
-Everything is committed and pushed, nothing is half-finished, and the live
-deployment matches `main`. The next piece of work is **milestone 3**, planned
-step by step at the bottom of this file.
-
-Two things were left deliberately unverified or undecided, both noted in full
-below: **nobody has watched the table UI in a browser** (no browser
-automation was available), and the **first-player tie-break is an assumption,
-not your decision** — earliest seat wins when players tie on the lowest card.
+Open two tabs (one private, so they get different player ids), create a
+room in one, join from the other, and play a game through.
 
 ## Milestones
 
@@ -50,8 +46,8 @@ not your decision** — earliest seat wins when players tie on the lowest card.
 | --- | --- | --- |
 | 1 | Scaffold + a room two tabs can join | **done**, deployed |
 | 2 | Deal/shuffle in the room server; per-player views | **done**, deployed |
-| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **next** |
-| 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | not started |
+| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, not committed or deployed |
+| 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | **mostly done** with 3, see below |
 | 5 | Room join by code, reconnect handling | partly done, see below |
 | 6 | Polish: visuals, mobile, link back to the portfolio | not started |
 
@@ -60,10 +56,21 @@ state, the per-player view protocol, a host-only start moving `lobby` ->
 `swap`, click-to-swap on your own cards, a per-player ready flag that ends
 the swap phase, and first-player determination generalised to 2-4 seats.
 
-Milestone 4's turn-order work is partly done as a side effect: the room
-carries `currentPlayerId` and `turnDirection`, and `determineFirstPlayer()`
-already handles any number of seats. What milestone 4 still owns is advancing
-the turn, the single-8 reversal, and elimination.
+Milestone 3 in full: the rules engine is `src/rules.ts`, a pure module (no
+sockets, no PartyServer) ported from `game.js`. The room server just routes
+moves into `applyMove()` and broadcasts the result. Its `canPlayCard` is
+checked against the single-player original *itself* — `rules.test.mjs`
+extracts the functions from `../gearoidoc.github.io/shithead/game.js` and
+compares all 182 (card, top) pairs.
+
+Milestone 4 mostly came with it, because writing a 2-player-only turn switch
+would have meant rewriting it: turn order walks `turnDirection` and closes
+over finished seats, the single-8 reversal and double-8 go-again are in
+(CLAUDE.md's worked example is a test), and ranked elimination runs to a
+shithead. `play.test.mjs` plays full 2- and 3-player games over sockets.
+What milestone 4 still lacks: a 4-player socket game in the tests (the
+rules suite covers 4 seats), and **what happens when the current player is
+disconnected** — today the table just waits for them (overlaps milestone 5).
 
 Milestone 5 came largely free: room codes, `#CODE` invite links, a
 `localStorage` player id that reclaims a seat, a reconnecting socket with
@@ -135,6 +142,38 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 - **2026-09-30 — disconnected players aren't waited on to end the swap
   phase.** Otherwise one dropped player stalls the table indefinitely.
 
+- **2026-10-02 — three 8s together neither reverses nor goes again.
+  ASSUMED, NOT CONFIRMED.** The confirmed rules cover a single 8 (reverse)
+  and two 8s (go again); the single-player game only singles out exactly
+  two. Three 8s is a plain play. Four 8s is four of a kind, so it burns.
+- **2026-10-02 — a single 8 that completes four of a kind burns rather than
+  reversing**, the same precedence the single-player game uses (it checks
+  four of a kind first).
+- **2026-10-02 — a single 8 doesn't reverse with only two players left in**
+  a 3-4 player game: with two left the next player is the other one either
+  way, matching the brief's "no direction to reverse with only 2 seats".
+- **2026-10-02 — going out on a 10, four of a kind or two 8s doesn't earn
+  another turn** (there's nothing left to play); play passes on. The
+  single-player game only checked for a win in `switchTurn`, so a player
+  going out on a burn wasn't declared the winner until later — a bug, not
+  a rule, and not ported.
+- **2026-10-02 — a failed blind play puts the revealed card in your hand**
+  along with the pile, per CLAUDE.md. The single-player game left the card
+  face down in place, which was a bug.
+- **2026-10-02 — players may pick up the pile even with a legal play
+  available** ("can't or won't play"), but not an empty pile.
+- **2026-10-02 — plays name cards by identity (`{rank, suit}`), not index.**
+  A stale client view can't then play the wrong card; the server checks each
+  named card is held, in the zone the player must play from. Swaps still
+  use indices (milestone 2, swap phase only).
+- **2026-10-02 — the game can, in principle, loop forever on forced moves**
+  (e.g. a player stuck on up-cards that can't beat an 8 picks it up, plays
+  it back, and round it goes). Every move is legal; humans break such loops
+  and bots can't — about 1 bot game in 900 stalls in simulation. There's no
+  stalemate rule in `game.js` or the brief, so none was invented;
+  `play.test.mjs` re-deals a stalled bot game instead. Raise with the user
+  if it ever shows up in real play.
+
 ## Landmines
 
 - **Never use a blanket `broadcast()`.** It reaches sockets that haven't
@@ -178,6 +217,18 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
   the live URL right after a deploy and passed on a retry, which is the worst
   kind of test failure. Use `QUIET_MS` only for asserting that nothing
   *further* arrives.
+- **`src/rules.ts` and `src/shared/cards.ts` must stay loadable by plain
+  Node** (`rules.test.mjs` imports them directly with Node 24's type
+  stripping): keep the `.ts` extension on their relative imports
+  (`allowImportingTsExtensions` is on), and don't use TS-only syntax that
+  emits code — no `enum`, `namespace` or constructor parameter properties.
+  `package.json` is `"type": "module"` for the same reason.
+- **The client has its own copy of `canPlay`** in `public/app.js`, for
+  highlighting only. If the rule changes in `rules.ts`, change it there too
+  — a mismatch just means a refused move, never a cheat.
+- **`[hidden]` needs `display: none !important`** in `style.css`, because
+  the screens set `display: flex` by id, which beats the browser's own
+  `hidden` rule. Without it the table bar was showing on the lobby screen.
 - **Client-side card indices are only valid against the state they came
   from.** Swap messages carry `handIndex`/`upcardIndex`, so the selection is
   cleared whenever a new game view arrives. The server validates bounds and
@@ -185,28 +236,19 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 
 ## Next step, concretely
 
-Milestone 3: the rules engine, server-side, validated against the
-single-player game with 2 players before going to 3-4.
-
-1. Port from `../gearoidoc.github.io/shithead/game.js`, in roughly this
-   order: `getTopCard`, `isUnder7Rule`, `isSpecialRank`, `canPlayCard`,
-   then `playCards`, `handleSpecialCards`, `isFourOfAKind`, `burnPile`,
-   `pickUpPile`, `drawBackUpToThree`, `checkWinCondition`.
-2. Add the play actions to the protocol: playing one or more cards of the
-   same rank from hand, up-cards or (blind) down-cards, and picking up the
-   pile. The server must validate the source as well as the cards — a client
-   asking to play from its down-cards while it still holds a hand is
-   cheating, not a UI bug.
-3. Special cards, from `CLAUDE.md`: 2 resets, 7 forces the next play low,
-   8 is always playable, 10 burns the pile and goes again, four-of-a-kind on
-   top burns. The 8-reversal is 3-4 player behaviour, so it belongs with
-   milestone 4, but leave room for it.
-4. Extend the test suites the same way: a `play.test.mjs` sibling, and keep
-   asserting the hidden-information properties after every new action — a
-   down-card play is the first time a card becomes public, so it's the most
-   likely place to leak one early.
-5. Elimination and ranking (`CLAUDE.md`, confirmed: last player holding
-   cards is the shithead) lands with milestone 4's turn order.
+1. **Play a game in two browser tabs** and fix whatever the UI gets wrong —
+   it has never been looked at. Then try three tabs, and a phone-width
+   window.
+2. Commit on a branch (`milestone-3-play`), open a PR, merge, `npm run
+   deploy`, and run the suite against the deployment
+   (`PARTY_HOST=shithead-multiplayer.itsgearofroad.workers.dev npm test`).
+3. Finish milestone 4: a 4-player game in `play.test.mjs`; confirm the
+   three-8s assumption with the user.
+4. Milestone 5's remaining question, now urgent because play exists: what
+   happens when the **current** player disconnects and doesn't come back?
+   The table waits forever today. Options to put to the user: skip their
+   turns while away, a timeout, or the host can remove them.
+5. A "play again" in the same room — today you leave and make a new room.
 
 Remaining open question from the brief, only relevant at milestone 6: where
 the client gets linked from (standalone vs. the portfolio's Projects nav).

@@ -5,7 +5,17 @@ import {
   type ConnectionContext,
   type WSMessage,
 } from "partyserver";
-import { FIRST_PLAYER_RANK_ORDER, deal, type Card } from "./shared/cards";
+import { deal, type Card } from "./shared/cards";
+import {
+  applyMove,
+  determineFirstPlayer,
+  emptyTable,
+  isGameOver,
+  shitheadId,
+  type Move,
+  type Table,
+  type TableEvent,
+} from "./rules";
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -39,10 +49,9 @@ type Seat = PublicPlayer & {
 /**
  * One Durable Object instance == one game room, keyed by its room code.
  *
- * Milestone 1: presence only. The room tracks who is seated, who is
- * currently connected, and broadcasts that roster. Game state (deck, hands)
- * will live here too, and the authoritative rules engine with it — clients
- * only ever receive what they are allowed to see.
+ * The room tracks who is seated and who is connected, holds the whole
+ * table (deck, hands, pile), and runs every move through the rules engine
+ * in `rules.ts`. Clients only ever receive what they are allowed to see.
  */
 export class Room extends Server<Env> {
   /**
@@ -59,19 +68,16 @@ export class Room extends Server<Env> {
 
   private phase: RoomPhase = "lobby";
 
-  /** The draw pile. Empty until the game is dealt. */
-  private deck: Card[] = [];
+  /**
+   * Deck, pile, turn and finishing order. Replaced on deal, and its `seats`
+   * is the same array as `this.seats` from then on — which holds because
+   * seats are only ever filtered out (reassigning `this.seats`) in the
+   * lobby, before any table exists.
+   */
+  private table: Table<Seat> = emptyTable();
 
-  private wastePile: Card[] = [];
-
-  /** Burned by a 10 or a four-of-a-kind; out of the game entirely. */
-  private burned: Card[] = [];
-
-  /** Whose turn it is. Null until the swap phase ends. */
-  private currentPlayerId: string | null = null;
-
-  /** 1 plays up through the seats, -1 plays down. A single 8 reverses it. */
-  private turnDirection: 1 | -1 = 1;
+  /** What the last move did, so every client can say so. */
+  private lastEvent: TableEvent | null = null;
 
   /** The room code, uppercased for display. */
   private get code(): string {
@@ -106,6 +112,12 @@ export class Room extends Server<Env> {
         return this.handleSwap(conn, msg.handIndex, msg.upcardIndex);
       case "ready":
         return this.handleReady(conn, msg.ready);
+      case "play":
+        return this.handleMove(conn, { kind: "play", source: msg.source, cards: msg.cards });
+      case "play-blind":
+        return this.handleMove(conn, { kind: "play-blind", index: msg.index });
+      case "pick-up":
+        return this.handleMove(conn, { kind: "pick-up" });
       default:
         return this.sendError(conn, "bad-message", "Unknown message type.");
     }
@@ -249,11 +261,8 @@ export class Room extends Server<Env> {
       seat.upcards = cards.upcards;
       seat.downcards = cards.downcards;
     });
-    this.deck = dealt.deck;
-    this.wastePile = [];
-    this.burned = [];
-    this.currentPlayerId = null;
-    this.turnDirection = 1;
+    this.table = { ...emptyTable(this.seats), deck: dealt.deck };
+    this.lastEvent = null;
     this.seats.forEach((seat) => {
       seat.ready = false;
     });
@@ -309,33 +318,32 @@ export class Room extends Server<Env> {
     const waitingOn = this.seats.filter((s) => s.connected && !s.ready);
     if (waitingOn.length === 0) {
       this.phase = "playing";
-      this.currentPlayerId = this.determineFirstPlayer();
+      this.table.currentPlayerId = determineFirstPlayer(this.table);
     }
 
     this.broadcastState();
   }
 
   /**
-   * Who leads: whoever holds the lowest card in hand or face-up, walking
-   * `3,4,...,K,A,2`. Generalised from the single-player version's two-player
-   * comparison to any number of seats.
-   *
-   * **Tie-break:** when several players hold the lowest rank, the earliest
-   * seat wins. The single-player version had the same bias (it checked the
-   * human before the AI), and this keeps it deterministic. If the real-life
-   * house rule differs, this is the one line to change.
+   * A play or a pick-up. The seat comes from the connection, never the
+   * message; everything else is checked by the rules engine, which leaves
+   * the table untouched when it refuses.
    */
-  private determineFirstPlayer(): string | null {
-    for (const rank of FIRST_PLAYER_RANK_ORDER) {
-      const holder = this.seats.find(
-        (seat) =>
-          seat.hand.some((card) => card.rank === rank) ||
-          seat.upcards.some((card) => card.rank === rank),
-      );
-      if (holder) return holder.id;
+  private handleMove(conn: Connection, move: Move) {
+    const seat = this.seatFor(conn);
+    if (!seat) return;
+
+    if (this.phase !== "playing") {
+      return this.sendError(conn, "wrong-phase", "The game isn't in play.");
     }
-    // Only reachable if nobody holds a card at all.
-    return this.seats[0]?.id ?? null;
+
+    const result = applyMove(this.table, seat.id, move);
+    if (!result.ok) return this.sendError(conn, result.code, result.message);
+
+    this.lastEvent = result.event;
+    if (isGameOver(this.table)) this.phase = "finished";
+
+    this.broadcastState();
   }
 
   /** The seat this connection is sitting in, if it holds one. */
@@ -384,10 +392,30 @@ export class Room extends Server<Env> {
       name: seat.name,
       seat: seat.seat,
       connected: seat.connected,
-      upcards: seat.upcards.map((card) => ({ ...card })),
+      upcards: seat.upcards.map((card) => copy(card)),
       handCount: seat.hand.length,
       downcardCount: seat.downcards.length,
       ready: seat.ready,
+      place: this.placeOf(seat.id),
+    };
+  }
+
+  private placeOf(playerId: string): number | null {
+    const index = this.table.finishOrder.indexOf(playerId);
+    return index === -1 ? null : index + 1;
+  }
+
+  /** A move, as everyone saw it happen. Field by field, like the rest. */
+  private eventView(event: TableEvent): TableEvent {
+    return {
+      playerId: event.playerId,
+      kind: event.kind,
+      cards: event.cards.map((card) => copy(card)),
+      pickedUp: event.pickedUp,
+      burned: event.burned,
+      goAgain: event.goAgain,
+      reversed: event.reversed,
+      place: event.place,
     };
   }
 
@@ -397,20 +425,25 @@ export class Room extends Server<Env> {
    */
   private gameStateFor(playerId: string): GameStateMessage {
     const me = this.seats.find((s) => s.id === playerId);
+    const top = this.table.wastePile.at(-1);
     return {
       type: "game",
       code: this.code,
       phase: this.phase,
       you: playerId,
-      hand: (me?.hand ?? []).map((card) => ({ ...card })),
+      hand: (me?.hand ?? []).map((card) => copy(card)),
       players: this.seats.map((s) => this.seatView(s)),
       hostId: this.seats[0]?.id ?? null,
-      deckCount: this.deck.length,
-      wasteTop: this.wastePile.at(-1) ?? null,
-      wasteCount: this.wastePile.length,
-      burnedCount: this.burned.length,
-      currentPlayerId: this.currentPlayerId,
-      turnDirection: this.turnDirection,
+      deckCount: this.table.deck.length,
+      wasteTop: top ? copy(top) : null,
+      wasteRecent: this.table.wastePile.slice(-4).map((card) => copy(card)),
+      wasteCount: this.table.wastePile.length,
+      burnedCount: this.table.burned.length,
+      currentPlayerId: this.table.currentPlayerId,
+      turnDirection: this.table.turnDirection,
+      lastEvent: this.lastEvent && this.eventView(this.lastEvent),
+      finishOrder: [...this.table.finishOrder],
+      shitheadId: shitheadId(this.table),
     };
   }
 
@@ -465,6 +498,11 @@ export class Room extends Server<Env> {
     this.send(conn, { type: "error", code, message, fatal: true });
     conn.close(1000, code);
   }
+}
+
+/** A card for the wire: a fresh object, built field by field. */
+function copy(card: Card): Card {
+  return { suit: card.suit, rank: card.rank, value: card.value };
 }
 
 /**

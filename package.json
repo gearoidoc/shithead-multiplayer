@@ -2,12 +2,13 @@
   "name": "shithead-multiplayer",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Online multiplayer Shithead (2-4 players) on PartyKit, with authoritative server-side game logic.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node test/presence.test.mjs && node test/game.test.mjs && node test/swap.test.mjs",
+    "test": "node test/rules.test.mjs && node test/presence.test.mjs && node test/game.test.mjs && node test/swap.test.mjs && node test/play.test.mjs",
     "types": "wrangler types"
   },
   "devDependencies": {
