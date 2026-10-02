@@ -20,6 +20,7 @@ import {
   emptyTable,
   isGameOver,
   nextPlayerId,
+  removePlayer,
   shitheadId,
 } from "../src/rules.ts";
 import { RANKS, VALUES } from "../src/shared/cards.ts";
@@ -212,9 +213,16 @@ check("a 7 only goes on 7-or-lower", on("7♠", "5♥") && !on("7♠", "9♥"));
   check("after A's extra turn, B is next (not D)", t.currentPlayerId === "B");
 }
 {
+  // Confirmed: three 8s = two 8s (go again) then one 8 (reverse).
   const t = table({ seats: ABCD({ A: { hand: "8♠ 8♥ 8♦ 3♠" } }), waste: "Q♣" });
   const r = play(t, "A", "8♠ 8♥ 8♦");
-  check("three 8s neither reverses nor goes again (assumed, see rules.ts)", t.currentPlayerId === "B" && !r.event.reversed && !r.event.goAgain);
+  check("4 players: three 8s reverse direction", t.turnDirection === -1 && r.event.reversed);
+  check("and play passes in the new direction, to D", t.currentPlayerId === "D" && !r.event.goAgain);
+}
+{
+  const t = table({ seats: [{ id: "A", hand: "8♠ 8♥ 8♦ 3♠" }, { id: "B", hand: "3♦" }], waste: "Q♣" });
+  const r = play(t, "A", "8♠ 8♥ 8♦");
+  check("2 players: three 8s just pass the turn", t.currentPlayerId === "B" && !r.event.reversed && !r.event.goAgain && t.turnDirection === 1);
 }
 {
   const t = table({ seats: ABCD({ C: { hand: "8♠ 3♠" } }), waste: "Q♣", current: "C", direction: -1 });
@@ -318,6 +326,42 @@ check("a 7 only goes on 7-or-lower", on("7♠", "5♥") && !on("7♠", "9♥"));
   const t = table({ seats: [{ id: "A", hand: "Q♠" }, { id: "B", hand: "3♦" }], waste: "9♣", deck: "5♥" });
   play(t, "A", "Q♠");
   check("an empty hand with cards left in the deck isn't out — it redraws", t.finishOrder.length === 0 && show(seatOf(t, "A").hand) === "5♥");
+}
+
+// --- the host removing an away player ---------------------------------------
+
+{
+  const t = table({ seats: ABCD({ B: { hand: "K♦ 4♦", up: "5♦ 6♦", down: "7♦ 9♦" } }), current: "B" });
+  const r = removePlayer(t, "B");
+  check("removing a player succeeds", r.ok && r.event.kind === "removed" && r.event.playerId === "B");
+  check("their cards leave play", seatOf(t, "B").hand.length + seatOf(t, "B").upcards.length + seatOf(t, "B").downcards.length === 0 && t.burned.length === 6);
+  check("if it was their turn, play moves on", t.currentPlayerId === "C");
+  check("they're skipped from then on", nextPlayerId(t, "A") === "C");
+  check("they get no finishing place", !t.finishOrder.includes("B"));
+  check("removing them twice is refused", removePlayer(t, "B").code === "cant-remove");
+  check("nor can they move", applyMove(t, "B", { kind: "pick-up" }).code === "not-your-turn");
+}
+{
+  const t = table({ seats: ABCD(), current: "A" });
+  removePlayer(t, "C");
+  check("removing someone else leaves the turn alone", t.currentPlayerId === "A");
+}
+{
+  const t = table({ seats: ABCD(), current: "A", finished: ["A"] });
+  check("a player who has gone out can't be removed", removePlayer(t, "A").code === "cant-remove");
+}
+{
+  const t = table({ seats: [{ id: "A", hand: "3♠" }, { id: "B", hand: "3♦" }, { id: "C", hand: "4♦" }], current: "B", finished: [] });
+  t.finishOrder = ["C"];
+  removePlayer(t, "B");
+  check("removal leaving one player ends the game", isGameOver(t) && t.currentPlayerId === null);
+  check("the one left takes the next place, not the shithead's", t.finishOrder.join() === "C,A" && shitheadId(t) === null);
+}
+{
+  const t = table({ seats: ABCD({ A: { hand: "5♠" }, B: { hand: "3♦" } }) });
+  t.currentPlayerId = null;
+  removePlayer(t, "B");
+  check("a removed player can't lead", determineFirstPlayer(t) === "C");
 }
 
 // --- first player across N seats -------------------------------------------

@@ -46,6 +46,11 @@ export type Table<S extends PlayerCards = PlayerCards> = {
   turnDirection: 1 | -1;
   /** Player ids in the order they went out: index 0 finished 1st. */
   finishOrder: string[];
+  /**
+   * Player ids the host removed from the game, in the order removed. They
+   * rank below everyone who stayed, and their cards are out of play.
+   */
+  removed: string[];
 };
 
 /** Where a play comes from. Down-cards are played blind, one at a time. */
@@ -68,9 +73,10 @@ export type TableEvent = {
   /**
    * `play` from hand or up-cards; `blind-play` a down-card that turned out
    * legal; `blind-fail` a down-card that didn't, so the player took the pile
-   * and the card; `pick-up` taking the pile by choice.
+   * and the card; `pick-up` taking the pile by choice; `removed` the host
+   * taking this player out of the game.
    */
-  kind: "play" | "blind-play" | "blind-fail" | "pick-up";
+  kind: "play" | "blind-play" | "blind-fail" | "pick-up" | "removed";
   /** The cards played or revealed. Empty for a pick-up. */
   cards: Card[];
   /** How many cards went into the player's hand (pick-up / blind-fail). */
@@ -90,11 +96,12 @@ export type RuleError =
   | "bad-card"
   | "wrong-source"
   | "illegal-play"
-  | "nothing-to-pick-up";
+  | "nothing-to-pick-up"
+  | "cant-remove";
 
-export type MoveResult =
-  | { ok: true; event: TableEvent }
-  | { ok: false; code: RuleError; message: string };
+export type Refusal = { ok: false; code: RuleError; message: string };
+
+export type MoveResult = { ok: true; event: TableEvent } | Refusal;
 
 /** Hand cards are topped back up to this while the deck lasts. */
 export const HAND_SIZE = 3;
@@ -108,6 +115,7 @@ export function emptyTable<S extends PlayerCards>(seats: S[] = []): Table<S> {
     currentPlayerId: null,
     turnDirection: 1,
     finishOrder: [],
+    removed: [],
   };
 }
 
@@ -197,7 +205,7 @@ export function isFourOfAKind(pile: Card[]): boolean {
  */
 export function determineFirstPlayer(table: Table): string | null {
   for (const rank of FIRST_PLAYER_RANK_ORDER) {
-    const holder = table.seats.find(
+    const holder = activeSeats(table).find(
       (seat) =>
         seat.hand.some((card) => card.rank === rank) ||
         seat.upcards.some((card) => card.rank === rank),
@@ -205,12 +213,17 @@ export function determineFirstPlayer(table: Table): string | null {
     if (holder) return holder.id;
   }
   // Only reachable if nobody holds a card at all.
-  return table.seats[0]?.id ?? null;
+  return activeSeats(table)[0]?.id ?? null;
 }
 
-/** Seats still holding cards, in seating order. */
+/** Still in the game: neither gone out nor removed by the host. */
+export function isActive(table: Table, playerId: string): boolean {
+  return !table.finishOrder.includes(playerId) && !table.removed.includes(playerId);
+}
+
+/** Seats still in the game, in seating order. */
 export function activeSeats<S extends PlayerCards>(table: Table<S>): S[] {
-  return table.seats.filter((seat) => !table.finishOrder.includes(seat.id));
+  return table.seats.filter((seat) => isActive(table, seat.id));
 }
 
 /** One player left holding cards: they're the shithead, and play is over. */
@@ -218,7 +231,11 @@ export function isGameOver(table: Table): boolean {
   return table.seats.length > 0 && activeSeats(table).length <= 1;
 }
 
-/** The last player holding cards, once the game is over. */
+/**
+ * The last player holding cards, once the game is over. Null when the game
+ * ended because removals left one player standing: they didn't lose to
+ * anyone still at the table, so `removePlayer` ranks them instead.
+ */
 export function shitheadId(table: Table): string | null {
   return isGameOver(table) ? (activeSeats(table)[0]?.id ?? null) : null;
 }
@@ -236,7 +253,7 @@ export function nextPlayerId(table: Table, fromId: string): string | null {
   for (let step = 1; step <= count; step += 1) {
     const index = (((from + step * table.turnDirection) % count) + count) % count;
     const seat = table.seats[index]!;
-    if (seat.id !== fromId && !table.finishOrder.includes(seat.id)) return seat.id;
+    if (seat.id !== fromId && isActive(table, seat.id)) return seat.id;
   }
   return null;
 }
@@ -245,7 +262,7 @@ export function nextPlayerId(table: Table, fromId: string): string | null {
 // Moves
 // ---------------------------------------------------------------------------
 
-const fail = (code: RuleError, message: string): MoveResult => ({ ok: false, code, message });
+const fail = (code: RuleError, message: string): Refusal => ({ ok: false, code, message });
 
 const isCardId = (value: unknown): value is CardId =>
   typeof value === "object" &&
@@ -406,15 +423,16 @@ function resolvePlay(
     table.wastePile = [];
   }
 
-  // Two 8s together: the same player goes again, direction unchanged.
-  const doubleEight = rank === "8" && count === 2;
-
-  // A single 8 reverses direction, with three or more still playing. With
-  // two left there's no direction to reverse: the next player is the other
-  // one either way. Three 8s does neither — the single-player rule only
-  // singles out a pair, and the reversal was confirmed for a single 8.
-  const reversed =
-    rank === "8" && count === 1 && !burned && activeSeats(table).length >= 3;
+  // 8s (unless they just burned the pile as four of a kind):
+  //  - two together: the same player goes again, direction unchanged;
+  //  - one: reverses direction;
+  //  - three: plays as two then one — go again, then reverse — so the net
+  //    effect is a reversal, and play passes in the new direction.
+  // A reversal needs three or more still playing. With two left there's no
+  // direction to reverse: the next player is the other one either way.
+  const eights = rank === "8" && !burned ? count : 0;
+  const doubleEight = eights === 2;
+  const reversed = (eights === 1 || eights === 3) && activeSeats(table).length >= 3;
   if (reversed) table.turnDirection = table.turnDirection === 1 ? -1 : 1;
 
   drawBackUpToThree(table, seat);
@@ -446,4 +464,50 @@ export function drawBackUpToThree(table: Table, seat: PlayerCards) {
   while (seat.hand.length < HAND_SIZE && table.deck.length > 0) {
     seat.hand.push(table.deck.shift()!);
   }
+}
+
+/**
+ * The host takes a player out of the game — for someone who has gone away
+ * and isn't coming back, so the table isn't left waiting on them forever.
+ * Who may do this, and to whom, is the room server's call; this only
+ * changes the table.
+ *
+ * The player's cards leave play (onto the burned pile, which is out of the
+ * game anyway), and they rank below everyone who stayed. If it was their
+ * turn, play moves on. If only one player is left, the game ends, and that
+ * player takes the next place rather than being called the shithead.
+ */
+export function removePlayer(table: Table, playerId: string): MoveResult {
+  const seat = table.seats.find((s) => s.id === playerId);
+  if (!seat || !isActive(table, playerId)) {
+    return fail("cant-remove", "That player is already out of the game.");
+  }
+
+  table.burned.push(...seat.hand, ...seat.upcards, ...seat.downcards);
+  seat.hand = [];
+  seat.upcards = [];
+  seat.downcards = [];
+  table.removed.push(playerId);
+
+  const left = activeSeats(table);
+  if (left.length === 1) table.finishOrder.push(left[0]!.id);
+
+  if (isGameOver(table)) {
+    table.currentPlayerId = null;
+  } else if (table.currentPlayerId === playerId) {
+    table.currentPlayerId = nextPlayerId(table, playerId);
+  }
+  return {
+    ok: true,
+    event: {
+      playerId,
+      kind: "removed",
+      cards: [],
+      pickedUp: 0,
+      burned: false,
+      goAgain: false,
+      reversed: false,
+      place: null,
+    },
+  };
 }

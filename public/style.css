@@ -591,6 +591,14 @@ button.secondary:hover { background-color: rgba(255, 255, 255, 0.25); }
 
 .opponent.is-turn { border-top-color: var(--gold); }
 
+.opponent.is-removed { opacity: 0.4; }
+
+.remove-btn {
+  align-self: flex-start;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
 .seat-badge.place {
   background-color: rgba(255, 255, 255, 0.2);
   font-weight: bold;

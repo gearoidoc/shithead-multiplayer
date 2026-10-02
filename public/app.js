@@ -376,6 +376,8 @@ function describeEvent(game) {
     case "pick-up":
       text = `${who} picked up the pile (${event.pickedUp})`;
       break;
+    case "removed":
+      return `${who} ${who === "You" ? "were" : "was"} removed from the game by the host.`;
   }
   if (event.burned) text += " — burned the pile!";
   if (event.reversed) text += " — direction reversed";
@@ -435,6 +437,7 @@ function renderGame() {
     ...others.map((player) => {
       const box = document.createElement("div");
       box.className = "opponent" + (player.connected ? "" : " is-away");
+      if (player.removed) box.classList.add("is-removed");
       if (player.id === game.currentPlayerId) box.classList.add("is-turn");
 
       const head = document.createElement("div");
@@ -449,7 +452,11 @@ function renderGame() {
       if (player.place) head.append(badge(ORDINALS[player.place - 1], "place"));
       if (player.id === game.shitheadId) head.append(badge("shithead", "shithead"));
       if (game.phase === "swap" && player.ready) head.append(badge("ready", "ready"));
-      if (!player.connected) head.append(badge("away", "away"));
+      if (player.removed) {
+        head.append(badge("removed", "away"));
+      } else if (!player.connected) {
+        head.append(badge("away", "away"));
+      }
 
       const counts = document.createElement("span");
       counts.className = "opponent-counts";
@@ -464,6 +471,26 @@ function renderGame() {
       ]);
 
       box.append(head, upRow);
+
+      // The host can take an away player out, so the table isn't stuck
+      // waiting on someone who isn't coming back.
+      const canRemove =
+        game.hostId === game.you &&
+        (game.phase === "swap" || game.phase === "playing") &&
+        !player.connected &&
+        !player.removed &&
+        player.place === null;
+      if (canRemove) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary remove-btn";
+        remove.textContent = `Remove ${player.name}`;
+        remove.addEventListener("click", () => {
+          if (!confirm(`Remove ${player.name} from the game? Their cards leave play and they can't rejoin.`)) return;
+          state.socket?.send({ type: "remove-player", playerId: player.id });
+        });
+        box.append(remove);
+      }
       return box;
     }),
   );
@@ -626,6 +653,7 @@ function renderGame() {
     el.results.replaceChildren(
       ...game.finishOrder.map((id, i) => resultRow(ORDINALS[i], nameOf(id))),
       ...(game.shitheadId ? [resultRow("💩", `${nameOf(game.shitheadId)} — the shithead`)] : []),
+      ...[...game.removedOrder].reverse().map((id) => resultRow("—", `${nameOf(id)} (removed)`)),
     );
   }
 

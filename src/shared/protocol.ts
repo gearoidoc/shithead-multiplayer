@@ -90,6 +90,13 @@ export type PlayBlindMessage = { type: "play-blind"; index: number };
 /** On your turn, take the whole pile into your hand instead of playing. */
 export type PickUpMessage = { type: "pick-up" };
 
+/**
+ * Host only, once the game is dealt: take a player who has gone away
+ * (disconnected) out of the game, so the table isn't stuck waiting on them.
+ * Their cards leave play and they can't rejoin this game.
+ */
+export type RemovePlayerMessage = { type: "remove-player"; playerId: string };
+
 export type ClientMessage =
   | JoinMessage
   | LeaveMessage
@@ -98,7 +105,8 @@ export type ClientMessage =
   | ReadyMessage
   | PlayMessage
   | PlayBlindMessage
-  | PickUpMessage;
+  | PickUpMessage
+  | RemovePlayerMessage;
 
 // ---------------------------------------------------------------------------
 // Server -> client
@@ -119,7 +127,11 @@ export type RoomStateMessage = {
   phase: RoomPhase;
   /** Ordered by seat. */
   players: PublicPlayer[];
-  /** Seat 0: the only player who will be able to start the game. */
+  /**
+   * Seat 0 in the lobby: the only player who can start the game. Once the
+   * game is dealt, the first connected seat still at the table — so a host
+   * who drops doesn't leave nobody able to remove an absent player.
+   */
   hostId: string | null;
 };
 
@@ -144,6 +156,8 @@ export type SeatView = {
   ready: boolean;
   /** 1-based finishing position once out of cards; null while still in. */
   place: number | null;
+  /** Taken out of the game by the host. Ranks below everyone who stayed. */
+  removed: boolean;
 };
 
 /**
@@ -178,8 +192,13 @@ export type GameStateMessage = {
   lastEvent: TableEvent | null;
   /** Player ids in the order they went out: index 0 finished 1st. */
   finishOrder: string[];
-  /** The last player holding cards, once the game is over. */
+  /**
+   * The last player holding cards, once the game is over. Null if the game
+   * ended because removals left only one player.
+   */
   shitheadId: string | null;
+  /** Players the host removed, in the order removed. */
+  removedOrder: string[];
 };
 
 export type ErrorCode =
@@ -195,7 +214,9 @@ export type ErrorCode =
   | "not-your-turn"
   | "wrong-source"
   | "illegal-play"
-  | "nothing-to-pick-up";
+  | "nothing-to-pick-up"
+  | "cant-remove"
+  | "removed";
 
 export type ErrorMessage = {
   type: "error";

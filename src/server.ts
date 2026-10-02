@@ -10,7 +10,9 @@ import {
   applyMove,
   determineFirstPlayer,
   emptyTable,
+  isActive,
   isGameOver,
+  removePlayer,
   shitheadId,
   type Move,
   type Table,
@@ -118,6 +120,8 @@ export class Room extends Server<Env> {
         return this.handleMove(conn, { kind: "play-blind", index: msg.index });
       case "pick-up":
         return this.handleMove(conn, { kind: "pick-up" });
+      case "remove-player":
+        return this.handleRemovePlayer(conn, msg.playerId);
       default:
         return this.sendError(conn, "bad-message", "Unknown message type.");
     }
@@ -144,6 +148,14 @@ export class Room extends Server<Env> {
     }
 
     const existing = this.seats.find((s) => s.id === playerId);
+
+    if (existing && this.table.removed.includes(playerId)) {
+      return this.refuse(
+        conn,
+        "removed",
+        `You were removed from the game in room ${this.code}.`,
+      );
+    }
 
     if (existing) {
       // Reconnect (or a second tab as the same player): reclaim the seat.
@@ -227,6 +239,8 @@ export class Room extends Server<Env> {
     } else {
       const seat = this.seats.find((s) => s.id === playerId);
       if (seat) seat.connected = false;
+      // Everyone left may already be ready; don't wait on the one who went.
+      this.maybeEndSwap();
     }
 
     this.broadcastState();
@@ -312,16 +326,75 @@ export class Room extends Server<Env> {
     }
 
     seat.ready = ready !== false;
+    this.maybeEndSwap();
+    this.broadcastState();
+  }
 
-    // Disconnected seats aren't waited on — otherwise one dropped player
-    // would stall the table indefinitely.
-    const waitingOn = this.seats.filter((s) => s.connected && !s.ready);
-    if (waitingOn.length === 0) {
-      this.phase = "playing";
-      this.table.currentPlayerId = determineFirstPlayer(this.table);
+  /**
+   * Once every connected player still in the game is ready, the swap phase
+   * ends and play begins. Disconnected seats aren't waited on — otherwise
+   * one dropped player would stall the table indefinitely.
+   */
+  private maybeEndSwap() {
+    if (this.phase !== "swap") return;
+    const waitingOn = this.seats.filter(
+      (s) => s.connected && !s.ready && isActive(this.table, s.id),
+    );
+    if (waitingOn.length > 0) return;
+
+    this.phase = "playing";
+    this.table.currentPlayerId = determineFirstPlayer(this.table);
+  }
+
+  /**
+   * Host only, once dealt: take an away player out of the game. Restricted
+   * to disconnected players, so a host can't kick someone who's playing.
+   */
+  private handleRemovePlayer(conn: Connection, targetId: string) {
+    const seat = this.seatFor(conn);
+    if (!seat) return;
+
+    if (this.phase !== "swap" && this.phase !== "playing") {
+      return this.sendError(conn, "wrong-phase", "There's no game to remove anyone from.");
+    }
+    if (seat.id !== this.hostId()) {
+      return this.sendError(conn, "not-host", "Only the host can remove a player.");
+    }
+    const target = this.seats.find((s) => s.id === targetId);
+    if (!target) {
+      return this.sendError(conn, "cant-remove", "That player isn't at this table.");
+    }
+    if (target.connected) {
+      return this.sendError(
+        conn,
+        "cant-remove",
+        `${target.name} is still connected — only players who have gone away can be removed.`,
+      );
+    }
+
+    const result = removePlayer(this.table, target.id);
+    if (!result.ok) return this.sendError(conn, result.code, result.message);
+    this.lastEvent = result.event;
+
+    this.maybeEndSwap();
+    if (isGameOver(this.table)) {
+      this.phase = "finished";
+      this.table.currentPlayerId = null;
     }
 
     this.broadcastState();
+  }
+
+  /**
+   * Seat 0 in the lobby. Once dealt, the first connected seat still at the
+   * table, so the host's powers pass on if the host drops.
+   */
+  private hostId(): string | null {
+    if (this.phase === "lobby") return this.seats[0]?.id ?? null;
+    const connected = this.seats.find(
+      (s) => s.connected && !this.table.removed.includes(s.id),
+    );
+    return connected?.id ?? this.seats[0]?.id ?? null;
   }
 
   /**
@@ -368,7 +441,7 @@ export class Room extends Server<Env> {
       code: this.code,
       phase: this.phase,
       players: this.seats.map((s) => this.publicPlayer(s)),
-      hostId: this.seats[0]?.id ?? null,
+      hostId: this.hostId(),
     };
   }
 
@@ -397,6 +470,7 @@ export class Room extends Server<Env> {
       downcardCount: seat.downcards.length,
       ready: seat.ready,
       place: this.placeOf(seat.id),
+      removed: this.table.removed.includes(seat.id),
     };
   }
 
@@ -433,7 +507,7 @@ export class Room extends Server<Env> {
       you: playerId,
       hand: (me?.hand ?? []).map((card) => copy(card)),
       players: this.seats.map((s) => this.seatView(s)),
-      hostId: this.seats[0]?.id ?? null,
+      hostId: this.hostId(),
       deckCount: this.table.deck.length,
       wasteTop: top ? copy(top) : null,
       wasteRecent: this.table.wastePile.slice(-4).map((card) => copy(card)),
@@ -444,6 +518,7 @@ export class Room extends Server<Env> {
       lastEvent: this.lastEvent && this.eventView(this.lastEvent),
       finishOrder: [...this.table.finishOrder],
       shitheadId: shitheadId(this.table),
+      removedOrder: [...this.table.removed],
     };
   }
 

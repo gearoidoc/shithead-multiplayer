@@ -8,7 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "node test/rules.test.mjs && node test/presence.test.mjs && node test/game.test.mjs && node test/swap.test.mjs && node test/play.test.mjs",
+    "test": "node test/rules.test.mjs && node test/presence.test.mjs && node test/game.test.mjs && node test/swap.test.mjs && node test/play.test.mjs && node test/remove.test.mjs",
     "types": "wrangler types"
   },
   "devDependencies": {
