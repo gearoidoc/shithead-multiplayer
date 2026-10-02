@@ -5,27 +5,27 @@ without re-deriving anything. [`CLAUDE.md`](./CLAUDE.md) holds the stable
 brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
-**Last updated:** 2026-10-02. Milestone 3 done, on branch `milestone-3-play`,
-**PR #2 open, not merged or deployed**. Most of milestone 4 came with it.
+**Last updated:** 2026-10-02. Milestone 3 merged (PR #2) and deployed, and
+the user played a real game through without problems. Follow-up branch
+`three-eights-and-removal` (PR #3): the confirmed three-8s rule and the host
+removing away players — not yet merged or deployed.
 
 ## Where we are
 
-- **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev — still
-  **milestone 2** (deal + swap, nothing playable). `npm run deploy` pushes
-  the milestone 3 work once it's committed.
-- `main` has milestones 1-2 (PR #1 merged). Milestone 3 is on
-  `milestone-3-play`, pushed, in
-  [PR #2](https://github.com/gearoidoc/shithead-multiplayer/pull/2).
+- **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev —
+  **milestone 3**, a full playable game (deployed 2026-10-02, version
+  `0b3aa72b`). The full suite passes against it.
+- `main` has milestones 1-3 (PRs #1 and #2 merged).
 - **A whole game is now playable end to end**: play one or more cards of a
   rank from hand, then up-cards, then blind down-cards; pick up the pile;
   all the special cards; ranked elimination to a shithead; results screen.
-- **Tests: 181 passing** across five suites — `rules.test.mjs` (75, pure,
-  no server needed), `presence` (23), `game` (31), `swap` (29), `play` (23).
-- **Still nobody has watched the UI in a browser.** No browser automation
-  was available again (the Claude in Chrome extension isn't connected; only
-  Firefox is installed, without a driver). The server and protocol are
-  thoroughly tested; `public/app.js` is not. Playing a game in two tabs is
-  the first thing to do next session.
+- **Tests: 217 passing** across six suites — `rules.test.mjs` (89, pure,
+  no server needed), `presence` (23), `game` (31), `swap` (29), `play` (23),
+  `remove` (22).
+- **The user played a real game on the live site (2026-10-02) and it went
+  perfectly.** Browser automation still isn't available to Claude (the
+  Claude in Chrome extension isn't connected), so UI changes since then —
+  the host's Remove button — are verified by the user, not by Claude.
 
 ## Picking this up again
 
@@ -47,7 +47,7 @@ room in one, join from the other, and play a game through.
 | --- | --- | --- |
 | 1 | Scaffold + a room two tabs can join | **done**, deployed |
 | 2 | Deal/shuffle in the room server; per-player views | **done**, deployed |
-| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, PR #2 open, not deployed |
+| 3 | `canPlayCard`/`handleSpecialCards` server-side, 2 players | **done**, deployed |
 | 4 | 3–4 players: turn direction, 8-reversal, first player, elimination | **mostly done** with 3, see below |
 | 5 | Room join by code, reconnect handling | partly done, see below |
 | 6 | Polish: visuals, mobile, link back to the portfolio | not started |
@@ -70,8 +70,11 @@ over finished seats, the single-8 reversal and double-8 go-again are in
 (CLAUDE.md's worked example is a test), and ranked elimination runs to a
 shithead. `play.test.mjs` plays full 2- and 3-player games over sockets.
 What milestone 4 still lacks: a 4-player socket game in the tests (the
-rules suite covers 4 seats), and **what happens when the current player is
-disconnected** — today the table just waits for them (overlaps milestone 5).
+rules suite covers 4 seats).
+
+**Removing away players** (confirmed by the user 2026-10-02 as the answer
+to "what if someone never comes back"): once the game is dealt, the host
+gets a Remove button on any player shown as away. See the decisions below.
 
 Milestone 5 came largely free: room codes, `#CODE` invite links, a
 `localStorage` player id that reclaims a seat, a reconnecting socket with
@@ -143,10 +146,27 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 - **2026-09-30 — disconnected players aren't waited on to end the swap
   phase.** Otherwise one dropped player stalls the table indefinitely.
 
-- **2026-10-02 — three 8s together neither reverses nor goes again.
-  ASSUMED, NOT CONFIRMED.** The confirmed rules cover a single 8 (reverse)
-  and two 8s (go again); the single-player game only singles out exactly
-  two. Three 8s is a plain play. Four 8s is four of a kind, so it burns.
+- **2026-10-02 — three 8s = two 8s then one 8. CONFIRMED by the user.**
+  Go again, then reverse: the direction flips and play passes in the new
+  direction. With two players still in, it just passes. (This replaced an
+  earlier assumption that three 8s was a plain play.)
+- **2026-10-02 — the host can remove a player, CONFIRMED by the user; the
+  details are Claude's choices, not yet put to the user:**
+  - only players currently **disconnected** can be removed, so a host
+    can't kick someone who's playing; the client asks for confirmation;
+  - their cards leave play (onto the burned pile — out of the game either
+    way) and they **can't rejoin** that game (`removed`, fatal);
+  - they rank **below everyone who stayed**, most recently removed first;
+  - if it was their turn, play moves on; during the swap phase, everyone
+    left being ready starts play;
+  - if removals leave **one** player, the game ends and that player takes
+    the next place — **no shithead is named**, since they didn't lose to
+    anyone still at the table;
+  - **the host role passes on once dealt**: `hostId` is the first connected
+    seat still in the game, so a host who drops doesn't leave nobody able
+    to remove them. In the lobby it's still seat 0.
+- **2026-10-02 — a dropped player now ends the swap phase** if everyone
+  left is already ready. Before, play only started on the next `ready`.
 - **2026-10-02 — a single 8 that completes four of a kind burns rather than
   reversing**, the same precedence the single-player game uses (it checks
   four of a kind first).
@@ -237,18 +257,11 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 
 ## Next step, concretely
 
-1. **Play a game in two browser tabs** and fix whatever the UI gets wrong —
-   it has never been looked at. Then try three tabs, and a phone-width
-   window.
-2. Merge PR #2, `npm run deploy`, and run the suite against the deployment
+1. Merge PR #3, `npm run deploy`, and run the suite against the deployment
    (`PARTY_HOST=shithead-multiplayer.itsgearofroad.workers.dev npm test`).
-3. Finish milestone 4: a 4-player game in `play.test.mjs`; confirm the
-   three-8s assumption with the user.
-4. Milestone 5's remaining question, now urgent because play exists: what
-   happens when the **current** player disconnects and doesn't come back?
-   The table waits forever today. Options to put to the user: skip their
-   turns while away, a timeout, or the host can remove them.
-5. A "play again" in the same room — today you leave and make a new room.
+2. Finish milestone 4: a 4-player game in `play.test.mjs`.
+3. A "play again" in the same room — today you leave and make a new room.
+4. Milestone 6 polish.
 
 Remaining open question from the brief, only relevant at milestone 6: where
 the client gets linked from (standalone vs. the portfolio's Projects nav).

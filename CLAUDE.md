@@ -95,6 +95,11 @@ These are implemented today for exactly 2 players (`gameState.player` vs
         - A plays two 8s together → A goes again immediately → direction
           stays forward → after A's extra turn, play continues to B as
           normal (not D).
+      - **Three 8s played together (CONFIRMED by the user, 2026-10-02)**
+        act as two 8s then one: go again, then reverse. Net effect: the
+        direction flips and play passes one seat in the new direction
+        (A plays three 8s → D is next). With only two players still in,
+        it simply passes the turn. Four 8s is four of a kind and burns.
   - **10**: always playable; burns the entire waste pile (removed from the
     game) and the same player goes again.
   - **Four of a kind** on top of the waste pile (top 4 cards matching rank,
@@ -167,6 +172,12 @@ The existing code hardcodes `gameState.currentPlayer === 'player' ? 'ai' :
 ### Resolved — don't re-ask
 
 - **The 8-reversal rule** — confirmed, see the special-cards section above.
+- **Three 8s** — confirmed 2026-10-02: two 8s then one, so a reversal. See
+  the special-cards section.
+- **A player who goes away and doesn't come back** — confirmed 2026-10-02:
+  the host can remove them. Implementation choices (removal only of
+  *disconnected* players, cards out of play, ranked below everyone, no
+  rejoin, host passes to the first connected seat) are in `PROGRESS.md`.
 - **Does play continue after the first player finishes?** Yes — ranked
   elimination, last player holding cards is the shithead. See the win
   condition section above.
