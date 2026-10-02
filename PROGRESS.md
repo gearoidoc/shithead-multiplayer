@@ -6,16 +6,16 @@ brief (rules, architecture decisions, open questions); this file holds
 *where we are*.
 
 **Last updated:** 2026-10-02. Milestone 3 merged (PR #2) and deployed, and
-the user played a real game through without problems. Follow-up branch
-`three-eights-and-removal` (PR #3): the confirmed three-8s rule and the host
-removing away players — not yet merged or deployed.
+the user played a real game through without problems. Follow-up PR #3 (the
+confirmed three-8s rule, and the host removing away players) merged and
+deployed the same day; the full suite passes against the live URL.
 
 ## Where we are
 
 - **Live:** https://shithead-multiplayer.itsgearofroad.workers.dev —
-  **milestone 3**, a full playable game (deployed 2026-10-02, version
-  `0b3aa72b`). The full suite passes against it.
-- `main` has milestones 1-3 (PRs #1 and #2 merged).
+  milestone 3 plus PR #3 (deployed 2026-10-02, version `e85c66dc`). The
+  full suite passes against it.
+- `main` has everything (PRs #1-#3 merged).
 - **A whole game is now playable end to end**: play one or more cards of a
   rank from hand, then up-cards, then blind down-cards; pick up the pile;
   all the special cards; ranked elimination to a shithead; results screen.
@@ -257,8 +257,8 @@ Deploying: `npm run deploy`. Already authenticated via `wrangler login`
 
 ## Next step, concretely
 
-1. Merge PR #3, `npm run deploy`, and run the suite against the deployment
-   (`PARTY_HOST=shithead-multiplayer.itsgearofroad.workers.dev npm test`).
+1. The user to try the host's Remove button in a browser (close a tab
+   mid-game, remove that player from another).
 2. Finish milestone 4: a 4-player game in `play.test.mjs`.
 3. A "play again" in the same room — today you leave and make a new room.
 4. Milestone 6 polish.
